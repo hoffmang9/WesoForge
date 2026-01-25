@@ -1,6 +1,9 @@
 [workspace]
 members = [
   "crates/client",
+  "crates/client-core",
+  "crates/client-engine",
+  "crates/client-gui",
   "crates/chiavdf-fast",
 ]
 resolver = "2"

@@ -2,7 +2,7 @@ use clap::Parser;
 use reqwest::Url;
 
 #[cfg(feature = "prod-backend")]
-const DEFAULT_BACKEND_URL: &str = "https://REPLACE-ME.invalid";
+const DEFAULT_BACKEND_URL: &str = "https://weso.forgeros.fr/";
 
 #[cfg(not(feature = "prod-backend"))]
 const DEFAULT_BACKEND_URL: &str = "http://127.0.0.1:8080";
@@ -15,10 +15,6 @@ pub fn default_parallel_proofs() -> usize {
     std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1)
-}
-
-pub fn default_worker_id() -> String {
-    std::env::var("HOSTNAME").unwrap_or_else(|_| "bbr-client".to_string())
 }
 
 fn parse_mem_budget_bytes(input: &str) -> Result<u64, String> {
@@ -67,10 +63,7 @@ pub struct Cli {
     #[arg(long, env = "BBR_BACKEND_URL", default_value_t = default_backend_url())]
     pub backend_url: Url,
 
-    #[arg(long, env = "BBR_WORKER_ID")]
-    pub worker_id: Option<String>,
-
-    /// Number of proof workers to run in parallel (controller mode).
+    /// Number of proof workers to run in parallel.
     #[arg(
         short = 'p',
         long,
@@ -82,7 +75,7 @@ pub struct Cli {
     #[arg(long, env = "BBR_NO_TUI", default_value_t = false)]
     pub no_tui: bool,
 
-    /// Memory budget per worker process for streaming proof generation (e.g. `128MB`).
+    /// Memory budget per worker for streaming proof generation (e.g. `128MB`).
     ///
     /// This is used by the `(k,l)` parameter tuner in the native prover.
     #[arg(
@@ -97,8 +90,4 @@ pub struct Cli {
     /// Run a local benchmark (e.g. `--bench 0`) and exit.
     #[arg(long, value_name = "ALGO")]
     pub bench: Option<u32>,
-
-    /// Hidden: run as a child worker process (controller spawns these).
-    #[arg(long, hide = true)]
-    pub worker: bool,
 }

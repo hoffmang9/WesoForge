@@ -59,14 +59,21 @@ or set BBR_CHIAVDF_DIR to a chiavdf checkout.",
             .join("fast_wrapper.h")
             .display()
     );
+    println!(
+        "cargo:rerun-if-changed={}",
+        chiavdf_src.join("compile_asm.cpp").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        chiavdf_src.join("refcode").join("lzcnt.c").display()
+    );
 
     let status = Command::new("make")
         .arg("-C")
         .arg(&chiavdf_src)
         .arg("-f")
         .arg("Makefile.vdf-client")
-        // Ensure we don't reuse objects built with different flags (e.g. LTO).
-        .arg("-B")
+        // Let `make` use its incremental rebuild logic.
         .arg("fastlib")
         .arg("PIC=1")
         .arg("LTO=")
@@ -78,10 +85,6 @@ or set BBR_CHIAVDF_DIR to a chiavdf checkout.",
     }
 
     println!("cargo:rustc-link-search=native={}", chiavdf_src.display());
-    println!(
-        "cargo:rerun-if-changed={}",
-        chiavdf_src.join("libchiavdf_fastc.a").display()
-    );
     println!("cargo:rustc-link-lib=static=chiavdf_fastc");
 
     // chiavdf depends on GMP and pthread.

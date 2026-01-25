@@ -36,7 +36,10 @@ impl TuiTerminal {
     ) -> anyhow::Result<Self> {
         crossterm::terminal::enable_raw_mode()?;
         #[cfg(unix)]
-        enable_onlcr()?;
+        if let Err(err) = enable_onlcr() {
+            let _ = crossterm::terminal::disable_raw_mode();
+            return Err(err);
+        }
 
         let stop = Arc::new(AtomicBool::new(false));
         let stop_thread = stop.clone();
@@ -56,7 +59,6 @@ impl TuiTerminal {
                     {
                         let n = shutdown.bump_forced();
                         if n == 1 {
-                            shutdown.request_graceful();
                             let _ = shutdown_tx.send(ShutdownEvent::Graceful);
                         } else {
                             let _ = shutdown_tx.send(ShutdownEvent::Immediate);
@@ -76,9 +78,9 @@ impl TuiTerminal {
 impl Drop for TuiTerminal {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
+        let _ = crossterm::terminal::disable_raw_mode();
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
-        let _ = crossterm::terminal::disable_raw_mode();
     }
 }

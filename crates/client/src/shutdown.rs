@@ -1,11 +1,10 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use tokio::sync::mpsc;
 
 #[derive(Debug)]
 pub struct ShutdownController {
-    graceful: AtomicBool,
     forced: AtomicU8,
 }
 
@@ -18,17 +17,8 @@ pub enum ShutdownEvent {
 impl ShutdownController {
     pub fn new() -> Self {
         Self {
-            graceful: AtomicBool::new(false),
             forced: AtomicU8::new(0),
         }
-    }
-
-    pub fn request_graceful(&self) {
-        self.graceful.store(true, Ordering::SeqCst);
-    }
-
-    pub fn should_exit_graceful(&self) -> bool {
-        self.graceful.load(Ordering::SeqCst)
     }
 
     pub fn bump_forced(&self) -> u8 {
@@ -47,7 +37,6 @@ pub fn spawn_ctrl_c_handler(
             }
             let n = shutdown.bump_forced();
             if n == 1 {
-                shutdown.request_graceful();
                 let _ = shutdown_tx.send(ShutdownEvent::Graceful);
             } else {
                 let _ = shutdown_tx.send(ShutdownEvent::Immediate);

@@ -8,16 +8,14 @@ anyhow = { workspace = true }
 base64 = { workspace = true }
 clap = { workspace = true }
 reqwest = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-thiserror = { workspace = true }
 tokio = { workspace = true }
-chrono = { workspace = true }
 indicatif = { workspace = true }
 crossterm = { workspace = true }
 libc = { workspace = true }
 
 bbr-client-chiavdf-fast = { path = "../chiavdf-fast" }
+bbr-client-core = { path = "../client-core" }
+bbr-client-engine = { path = "../client-engine" }
 
 [features]
 # Use the production backend URL as the compiled default for `--backend-url`.
