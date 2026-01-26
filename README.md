@@ -1,8 +1,8 @@
-# bbr_client
+# WesoForge
 
 CLI compactor worker:
 
-- Leases one job from `bbr_backend`
+- Leases jobs from the WesoForge backend (`https://weso.forgeros.fr`).
 - Computes a compact VDF proof witness via the fast `chiavdf` engine
 - Submits the result back to the backend
 - Loops forever
@@ -10,7 +10,6 @@ CLI compactor worker:
 ## Run
 
 ```bash
-cd bbr_client
 cargo run -p bbr-client --
 ```
 

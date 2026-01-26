@@ -409,7 +409,7 @@
   });
 </script>
 
-<div class="min-h-screen bg-bg text-fg flex flex-col">
+<div class="h-screen bg-bg text-fg flex flex-col overflow-hidden">
   <header class="border-b border-border bg-header text-on-header">
     <div class="flex w-full items-center justify-between gap-4 px-6 py-4">
       <div>
@@ -476,7 +476,7 @@
 	    </div>
 	  </header>
 
-	  <main class="flex w-full flex-1 flex-col gap-6 px-6 py-6 min-h-0">
+	  <main class="flex w-full flex-1 flex-col gap-6 px-6 py-6 min-h-0 overflow-auto">
 	    {#if runError}
 	      <div class="rounded border border-danger bg-danger/10 px-4 py-3 text-sm text-danger">{runError}</div>
 	    {/if}
@@ -541,7 +541,7 @@
 
 			    </section>
 
-	    <section class="rounded border border-border bg-surface p-4 lg:col-start-1 lg:col-span-1 lg:row-start-2">
+	    <section class="rounded border border-border bg-surface p-4 lg:col-start-1 lg:col-span-1 lg:row-start-2 flex min-h-0 flex-col">
       <div class="flex items-center justify-between gap-4">
         <h2 class="text-sm font-semibold">Workers</h2>
         <div class="text-xs text-muted">
@@ -553,44 +553,46 @@
         </div>
       </div>
 
-      {#if !running}
-        <p class="mt-3 text-sm text-muted">Start the engine to fetch work and compute proofs.</p>
-      {:else if workers.length === 0}
-        <p class="mt-3 text-sm text-muted">Waiting for workers…</p>
-      {:else}
-        <div class="mt-4 flex flex-wrap gap-4">
-          {#each workers as w (w.worker_idx)}
-            <div class="w-full rounded border border-border bg-bg p-4 sm:w-[275px]">
-              <div class="flex items-center justify-between">
-                <div class="text-sm font-semibold">Worker {w.worker_idx + 1}</div>
-                <span class={`rounded border px-2 py-1 text-xs ${stageBadgeClass(w.stage)}`}>{w.stage}</span>
+      <div class="mt-4 lg:min-h-0 lg:flex-1 lg:overflow-auto">
+        {#if !running}
+          <p class="text-sm text-muted">Start the engine to fetch work and compute proofs.</p>
+        {:else if workers.length === 0}
+          <p class="text-sm text-muted">Waiting for workers…</p>
+        {:else}
+          <div class="flex flex-wrap gap-4">
+            {#each workers as w (w.worker_idx)}
+              <div class="w-full rounded border border-border bg-bg p-4 sm:w-[275px]">
+                <div class="flex items-center justify-between">
+                  <div class="text-sm font-semibold">Worker {w.worker_idx + 1}</div>
+                  <span class={`rounded border px-2 py-1 text-xs ${stageBadgeClass(w.stage)}`}>{w.stage}</span>
+                </div>
+
+                {#if w.job}
+                  <div class="mt-2 text-xs text-muted">
+                    Job #{w.job.job_id} • height {w.job.height} • field {w.job.field_vdf}
+                  </div>
+
+                  <div class="mt-3">
+                    <div class="h-2 w-full rounded bg-border/40">
+                      <div
+                        class="h-2 rounded bg-accent transition-[width] duration-150"
+                        style={`width: ${workerProgressPct(w).toFixed(2)}%`}
+                      ></div>
+                    </div>
+                    <div class="mt-2 flex items-center justify-between text-xs text-muted">
+                      <span>
+                        {formatCount(w.iters_done)} / {formatCount(w.iters_total)} ({workerProgressPct(w).toFixed(1)}%)
+                      </span>
+                    </div>
+                  </div>
+                {:else}
+                  <div class="mt-3 text-sm text-muted">Idle</div>
+                {/if}
               </div>
-
-              {#if w.job}
-                <div class="mt-2 text-xs text-muted">
-                  Job #{w.job.job_id} • height {w.job.height} • field {w.job.field_vdf}
-                </div>
-
-                <div class="mt-3">
-                  <div class="h-2 w-full rounded bg-border/40">
-                    <div
-                      class="h-2 rounded bg-accent transition-[width] duration-150"
-                      style={`width: ${workerProgressPct(w).toFixed(2)}%`}
-                    ></div>
-                  </div>
-                  <div class="mt-2 flex items-center justify-between text-xs text-muted">
-                    <span>
-                      {formatCount(w.iters_done)} / {formatCount(w.iters_total)} ({workerProgressPct(w).toFixed(1)}%)
-                    </span>
-                  </div>
-                </div>
-              {:else}
-                <div class="mt-3 text-sm text-muted">Idle</div>
-              {/if}
-            </div>
-          {/each}
-        </div>
-      {/if}
+            {/each}
+          </div>
+        {/if}
+      </div>
     </section>
 
 		    <section class="rounded border border-border bg-surface flex min-h-0 flex-col lg:col-span-1 lg:col-start-2 lg:row-start-1 lg:row-span-2">
