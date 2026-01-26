@@ -64,13 +64,21 @@ fi
 DIST_DIR="${DIST_DIR:-$ROOT/dist}"
 mkdir -p "$DIST_DIR"
 
-echo "Building WesoForge GUI AppImage..." >&2
+SUPPORT_DEVTOOLS="${SUPPORT_DEVTOOLS:-0}"
+FEATURES="prod-backend"
+OUT_PREFIX="WesoForge-gui"
+if [[ "$SUPPORT_DEVTOOLS" == "1" ]]; then
+  FEATURES="$FEATURES,support-devtools"
+  OUT_PREFIX="WesoForge-gui-support"
+fi
+
+echo "Building WesoForge GUI AppImage (features: $FEATURES)..." >&2
 (
   cd crates/client-gui
   # linuxdeploy's bundled `strip` can be too old for modern `.relr.dyn` ELF sections.
   # Skip stripping to keep the AppImage build reliable across distros.
   export NO_STRIP=1
-  cargo tauri build --features prod-backend --bundles appimage -- --locked
+  cargo tauri build --features "$FEATURES" --bundles appimage -- --locked
 )
 
 APPIMAGE_DIR="$TARGET_DIR/release/bundle/appimage"
@@ -87,6 +95,6 @@ if [[ -z "${VERSION:-}" ]]; then
 fi
 ARCH="$(platform_arch)"
 
-APPIMAGE_DST="$DIST_DIR/WesoForge-gui_${VERSION}_${ARCH}.AppImage"
+APPIMAGE_DST="$DIST_DIR/${OUT_PREFIX}_${VERSION}_${ARCH}.AppImage"
 install -m 0755 "$APPIMAGE_SRC" "$APPIMAGE_DST"
 echo "Wrote: $APPIMAGE_DST" >&2

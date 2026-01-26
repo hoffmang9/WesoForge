@@ -148,6 +148,7 @@ struct EngineRuntime {
     pending: VecDeque<WorkJobItem>,
     fetch_task: Option<tokio::task::JoinHandle<anyhow::Result<Vec<WorkJobItem>>>>,
     fetch_backoff: Option<Pin<Box<tokio::time::Sleep>>>,
+    first_fetch_include_already_leased: bool,
 
     recent_jobs: VecDeque<JobOutcome>,
     snapshot_tx: watch::Sender<StatusSnapshot>,
@@ -213,9 +214,10 @@ impl EngineRuntime {
         let http = self.http.clone();
         let backend = self.cfg.backend_url.clone();
         let count = count;
+        let already_leased = self.first_fetch_include_already_leased;
         self.fetch_task = Some(tokio::spawn(async move {
             let count = count.min(u32::MAX as usize) as u32;
-            let batch: BackendWorkBatch = fetch_work(&http, &backend, count).await?;
+            let batch: BackendWorkBatch = fetch_work(&http, &backend, count, already_leased).await?;
             let items = batch
                 .jobs
                 .into_iter()
@@ -301,6 +303,9 @@ impl EngineRuntime {
         match res {
             Ok(Ok(items)) => {
                 if !self.inner.should_stop() {
+                    self.first_fetch_include_already_leased = false;
+                }
+                if !self.inner.should_stop() {
                     self.pending.extend(items);
                 }
                 if self.pending.is_empty() {
@@ -350,6 +355,9 @@ impl EngineRuntime {
             }
             WorkerInternalEvent::Warning { message } => {
                 self.emit(EngineEvent::Warning { message });
+            }
+            WorkerInternalEvent::Error { message } => {
+                self.emit(EngineEvent::Error { message });
             }
         }
     }
@@ -602,6 +610,7 @@ async fn run_engine(
         pending: VecDeque::new(),
         fetch_task: None,
         fetch_backoff: None,
+        first_fetch_include_already_leased: true,
         recent_jobs: VecDeque::new(),
         snapshot_tx,
         inner,

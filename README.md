@@ -7,11 +7,6 @@ WesoForge is a client for **bluebox compaction**. It leases compaction work from
 Under the hood it relies on a slightly modified `chiavdf` to improve parallelism for bluebox compaction:
 https://github.com/Ealrann/chiavdf
 
-## What you ship
-
-- **CLI binary**: `WesoForge-cli_<version>_<arch>`
-- **GUI (Linux)**: `WesoForge-gui_<version>_<arch>.AppImage`
-
 ## Build (from source)
 
 ### CLI (release)
@@ -28,6 +23,12 @@ Builds the AppImage and writes a versioned artifact under `dist/`:
 
 ```bash
 ./build-gui.sh
+```
+
+Support build (release, but with devtools enabled):
+
+```bash
+SUPPORT_DEVTOOLS=1 ./build-gui.sh
 ```
 
 Notes:

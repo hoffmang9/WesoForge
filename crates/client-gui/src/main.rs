@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use reqwest::Url;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::Mutex;
 
 use bbr_client_core::submitter::{SubmitterConfig, load_submitter_config, save_submitter_config};
@@ -117,6 +117,9 @@ async fn start_client(
                                     iters_per_sec,
                                 });
                             } else {
+                                if let EngineEvent::Error { message } = &ev {
+                                    eprintln!("{message}");
+                                }
                                 let is_stopped = matches!(ev, EngineEvent::Stopped);
                                 let _ = app.emit("engine-event", ev);
                                 if is_stopped {
@@ -185,6 +188,15 @@ fn main() {
     let state = Arc::new(GuiState::default());
     tauri::Builder::default()
         .manage(state)
+        .setup(|app| {
+            #[cfg(feature = "support-devtools")]
+            {
+                if let Some(win) = app.get_webview_window("main") {
+                    win.open_devtools();
+                }
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_submitter_config,
             set_submitter_config,

@@ -38,6 +38,7 @@ pub(crate) enum WorkerInternalEvent {
     StageChanged { worker_idx: usize, stage: WorkerStage },
     Finished { outcome: JobOutcome },
     Warning { message: String },
+    Error { message: String },
 }
 
 pub(crate) async fn run_worker_task(
@@ -102,22 +103,6 @@ async fn run_job(
         number_of_iterations: job.number_of_iterations,
     };
 
-    let now = Utc::now().timestamp();
-    if now >= lease_expires_at {
-        return JobOutcome {
-            worker_idx,
-            job: job_summary,
-            output_mismatch: false,
-            submit_reason: None,
-            submit_detail: None,
-            accepted_event_id: None,
-            error: Some("Error (lease expired)".to_string()),
-            compute_ms: 0,
-            submit_ms: 0,
-            total_ms: started_at.elapsed().as_millis() as u64,
-        };
-    }
-
     let output = match B64.decode(job.output_b64.as_bytes()) {
         Ok(v) => v,
         Err(err) => {
@@ -160,9 +145,10 @@ async fn run_job(
 
     let compute_started_at = Instant::now();
     let (witness, output_mismatch) = match compute_witness(
+        worker_idx,
+        internal_tx,
         progress.clone(),
         job.number_of_iterations,
-        lease_expires_at,
         progress_steps,
         challenge,
         output.clone(),
@@ -236,21 +222,21 @@ async fn run_job(
 }
 
 pub(crate) async fn compute_witness(
+    worker_idx: usize,
+    internal_tx: &mpsc::UnboundedSender<WorkerInternalEvent>,
     progress: Arc<AtomicU64>,
     total_iters: u64,
-    lease_expires_at: i64,
     progress_steps: u64,
     challenge: Vec<u8>,
     output: Vec<u8>,
 ) -> Result<(Vec<u8>, bool), String> {
     let mut last_compute_err: Option<String> = None;
+    let mut last_log_at = Instant::now()
+        .checked_sub(Duration::from_secs(3600))
+        .unwrap_or_else(Instant::now);
+    let mut attempts: u32 = 0;
 
     loop {
-        let now = Utc::now().timestamp();
-        if now >= lease_expires_at {
-            return Err("Error (lease expired)".to_string());
-        }
-
         let total_iters = total_iters.max(1);
         let progress_interval = progress_interval(total_iters, progress_steps);
         let challenge = challenge.clone();
@@ -296,19 +282,43 @@ pub(crate) async fn compute_witness(
         match compute {
             Ok(Ok((witness, output_mismatch))) => return Ok((witness, output_mismatch)),
             Ok(Err(err)) => {
+                attempts = attempts.saturating_add(1);
                 let err_msg = format!("{err:#}");
-                if last_compute_err.as_deref() != Some(&err_msg) {
+                let should_log = last_compute_err.as_deref() != Some(&err_msg)
+                    || last_log_at.elapsed() >= Duration::from_secs(30);
+                if should_log {
                     last_compute_err = Some(err_msg.clone());
+                    last_log_at = Instant::now();
+                    let _ = internal_tx.send(WorkerInternalEvent::Error {
+                        message: format!(
+                            "error: worker {} compute failed (attempt {}): {}; retrying in 5s",
+                            worker_idx + 1,
+                            attempts,
+                            err_msg
+                        ),
+                    });
                 }
-                tokio::time::sleep(Duration::from_secs(2)).await;
+                tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
             Err(err) => {
+                attempts = attempts.saturating_add(1);
                 let err_msg = format!("{err:#}");
-                if last_compute_err.as_deref() != Some(&err_msg) {
+                let should_log = last_compute_err.as_deref() != Some(&err_msg)
+                    || last_log_at.elapsed() >= Duration::from_secs(30);
+                if should_log {
                     last_compute_err = Some(err_msg.clone());
+                    last_log_at = Instant::now();
+                    let _ = internal_tx.send(WorkerInternalEvent::Error {
+                        message: format!(
+                            "error: worker {} compute join failed (attempt {}): {}; retrying in 5s",
+                            worker_idx + 1,
+                            attempts,
+                            err_msg
+                        ),
+                    });
                 }
-                tokio::time::sleep(Duration::from_secs(2)).await;
+                tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
         };
@@ -337,12 +347,11 @@ async fn submit_witness(
     witness: &[u8],
 ) -> Result<SubmitResponse, String> {
     let mut last_submit_err: Option<String> = None;
+    let mut attempts: u32 = 0;
+    let mut last_log_at = Instant::now().checked_sub(Duration::from_secs(3600)).unwrap_or_else(Instant::now);
 
     loop {
         let now = Utc::now().timestamp();
-        if now >= lease_expires_at {
-            return Err("Error (lease expired)".to_string());
-        }
 
         let (reward_address, name) = {
             let cfg = submitter.read().await;
@@ -362,6 +371,18 @@ async fn submit_witness(
         {
             Ok(res) => return Ok(res),
             Err(err) => {
+                attempts = attempts.saturating_add(1);
+                if matches!(
+                    err.downcast_ref::<BackendError>(),
+                    Some(BackendError::LeaseInvalid)
+                ) {
+                    let _ = internal_tx.send(WorkerInternalEvent::Error {
+                        message: format!(
+                            "error: submit rejected for job {job_id}: lease invalid/expired"
+                        ),
+                    });
+                    return Err("Error (lease invalid/expired)".to_string());
+                }
                 if matches!(
                     err.downcast_ref::<BackendError>(),
                     Some(BackendError::InvalidRewardAddress)
@@ -383,10 +404,19 @@ async fn submit_witness(
                 }
 
                 let err_msg = format!("{err:#}");
-                if last_submit_err.as_deref() != Some(&err_msg) {
+                let should_log = last_submit_err.as_deref() != Some(&err_msg)
+                    || last_log_at.elapsed() >= Duration::from_secs(30);
+                if should_log {
                     last_submit_err = Some(err_msg.clone());
+                    last_log_at = Instant::now();
+                    let expires_in = (lease_expires_at - now).max(0);
+                    let _ = internal_tx.send(WorkerInternalEvent::Error {
+                        message: format!(
+                            "error: submit failed for job {job_id} (attempt {attempts}, lease expires in {expires_in}s): {err_msg}; retrying in 5s"
+                        ),
+                    });
                 }
-                tokio::time::sleep(Duration::from_secs(2)).await;
+                tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
         }

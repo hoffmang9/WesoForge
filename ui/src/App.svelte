@@ -412,8 +412,16 @@
 <div class="h-screen bg-bg text-fg flex flex-col overflow-hidden">
   <header class="border-b border-border bg-header text-on-header">
     <div class="flex w-full items-center justify-between gap-4 px-6 py-4">
-      <div>
-        <h1 class="font-itc text-xl font-semibold">WesoForge</h1>
+      <div class="flex items-center gap-2">
+        <img
+          src="/logo-64.avif"
+          alt="WesoForge logo"
+          class="h-6 w-6"
+          width="24"
+          height="24"
+          decoding="async"
+        />
+        <h1 class="font-itc text-xl font-semibold relative top-0.5">WesoForge</h1>
       </div>
 
       <div class="flex items-center gap-3">

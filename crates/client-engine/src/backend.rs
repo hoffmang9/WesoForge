@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 pub(crate) enum BackendError {
     #[error("invalid reward address")]
     InvalidRewardAddress,
+    #[error("invalid or expired lease")]
+    LeaseInvalid,
 }
 
 #[derive(Debug, Deserialize)]
@@ -17,6 +19,12 @@ struct ApiErrorBody {
 #[derive(Debug, Serialize)]
 struct WorkRequest {
     count: u32,
+    #[serde(default, skip_serializing_if = "is_false")]
+    already_leased: bool,
+}
+
+fn is_false(v: &bool) -> bool {
+    !*v
 }
 
 #[derive(Debug, Deserialize)]
@@ -57,22 +65,27 @@ pub(crate) async fn fetch_work(
     http: &reqwest::Client,
     backend: &Url,
     count: u32,
+    already_leased: bool,
 ) -> anyhow::Result<BackendWorkBatch> {
     let url = backend.join("api/jobs/lease_proofs")?;
     let res = http
         .post(url)
-        .json(&WorkRequest { count })
+        .json(&WorkRequest {
+            count,
+            already_leased,
+        })
         .send()
         .await?;
 
     if !res.status().is_success() {
         let status = res.status();
         let body = res.text().await.unwrap_or_default();
-        if status == reqwest::StatusCode::BAD_REQUEST {
-            if let Ok(err) = serde_json::from_str::<ApiErrorBody>(&body) {
-                if err.code == "invalid_reward_address" {
-                    return Err(BackendError::InvalidRewardAddress.into());
-                }
+        if let Ok(err) = serde_json::from_str::<ApiErrorBody>(&body) {
+            if status == reqwest::StatusCode::BAD_REQUEST && err.code == "invalid_reward_address" {
+                return Err(BackendError::InvalidRewardAddress.into());
+            }
+            if status == reqwest::StatusCode::CONFLICT && err.code == "lease_invalid" {
+                return Err(BackendError::LeaseInvalid.into());
             }
         }
         anyhow::bail!("http {status}: {body}");
@@ -104,11 +117,12 @@ pub(crate) async fn submit_job(
     if !res.status().is_success() {
         let status = res.status();
         let body = res.text().await.unwrap_or_default();
-        if status == reqwest::StatusCode::BAD_REQUEST {
-            if let Ok(err) = serde_json::from_str::<ApiErrorBody>(&body) {
-                if err.code == "invalid_reward_address" {
-                    return Err(BackendError::InvalidRewardAddress.into());
-                }
+        if let Ok(err) = serde_json::from_str::<ApiErrorBody>(&body) {
+            if status == reqwest::StatusCode::BAD_REQUEST && err.code == "invalid_reward_address" {
+                return Err(BackendError::InvalidRewardAddress.into());
+            }
+            if status == reqwest::StatusCode::CONFLICT && err.code == "lease_invalid" {
+                return Err(BackendError::LeaseInvalid.into());
             }
         }
         anyhow::bail!("http {status}: {body}");
