@@ -80,12 +80,6 @@ async fn error_from_response(res: reqwest::Response) -> anyhow::Error {
 #[derive(Debug, Serialize)]
 struct WorkRequest {
     count: u32,
-    #[serde(default, skip_serializing_if = "is_false")]
-    already_leased: bool,
-}
-
-fn is_false(v: &bool) -> bool {
-    !*v
 }
 
 #[derive(Debug, Deserialize)]
@@ -95,7 +89,7 @@ pub(crate) struct BackendWorkBatch {
     pub(crate) jobs: Vec<BackendJobDto>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct BackendJobDto {
     pub(crate) job_id: u64,
     pub(crate) height: u32,
@@ -126,15 +120,11 @@ pub(crate) async fn fetch_work(
     http: &reqwest::Client,
     backend: &Url,
     count: u32,
-    already_leased: bool,
 ) -> anyhow::Result<BackendWorkBatch> {
     let url = backend.join("api/jobs/lease_proofs")?;
     let res = http
         .post(url)
-        .json(&WorkRequest {
-            count,
-            already_leased,
-        })
+        .json(&WorkRequest { count })
         .send()
         .await?;
 

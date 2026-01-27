@@ -12,6 +12,7 @@ use crate::api::{
     WorkerSnapshot, WorkerStage,
 };
 use crate::backend::{BackendJobDto, BackendWorkBatch, fetch_work};
+use crate::inflight::InflightStore;
 use crate::worker::{WorkerCommand, WorkerInternalEvent};
 
 pub(crate) struct EngineInner {
@@ -148,7 +149,7 @@ struct EngineRuntime {
     pending: VecDeque<WorkJobItem>,
     fetch_task: Option<tokio::task::JoinHandle<anyhow::Result<Vec<WorkJobItem>>>>,
     fetch_backoff: Option<Pin<Box<tokio::time::Sleep>>>,
-    first_fetch_include_already_leased: bool,
+    inflight: Option<InflightStore>,
 
     recent_jobs: VecDeque<JobOutcome>,
     snapshot_tx: watch::Sender<StatusSnapshot>,
@@ -214,10 +215,9 @@ impl EngineRuntime {
         let http = self.http.clone();
         let backend = self.cfg.backend_url.clone();
         let count = count;
-        let already_leased = self.first_fetch_include_already_leased;
         self.fetch_task = Some(tokio::spawn(async move {
             let count = count.min(u32::MAX as usize) as u32;
-            let batch: BackendWorkBatch = fetch_work(&http, &backend, count, already_leased).await?;
+            let batch: BackendWorkBatch = fetch_work(&http, &backend, count).await?;
             let items = batch
                 .jobs
                 .into_iter()
@@ -294,7 +294,7 @@ impl EngineRuntime {
         Ok(())
     }
 
-    fn handle_fetch_result(
+    async fn handle_fetch_result(
         &mut self,
         res: Result<anyhow::Result<Vec<WorkJobItem>>, tokio::task::JoinError>,
     ) {
@@ -303,9 +303,23 @@ impl EngineRuntime {
         match res {
             Ok(Ok(items)) => {
                 if !self.inner.should_stop() {
-                    self.first_fetch_include_already_leased = false;
-                }
-                if !self.inner.should_stop() {
+                    if let Some(store) = &mut self.inflight {
+                        let mut changed = false;
+                        for item in &items {
+                            changed |= store.insert_job(
+                                item.lease_id.clone(),
+                                item.lease_expires_at,
+                                item.job.clone(),
+                            );
+                        }
+                        if changed {
+                            if let Err(err) = store.persist().await {
+                                self.emit(EngineEvent::Warning {
+                                    message: format!("warning: failed to persist inflight leases: {err:#}"),
+                                });
+                            }
+                        }
+                    }
                     self.pending.extend(items);
                 }
                 if self.pending.is_empty() {
@@ -342,12 +356,26 @@ impl EngineRuntime {
                     worker.finish_job();
                 }
                 if let Some(a) = self.worker_progress.get(worker_idx) {
-                    a.store(0, std::sync::atomic::Ordering::Relaxed);
+                    a.store(0, Ordering::Relaxed);
                 }
 
                 self.recent_jobs.push_back(outcome.clone());
                 while self.recent_jobs.len() > self.cfg.recent_jobs_max.max(1) {
                     self.recent_jobs.pop_front();
+                }
+
+                if outcome.accepted_event_id.is_some()
+                    || matches!(outcome.submit_reason.as_deref(), Some("accepted"))
+                {
+                    if let Some(store) = &mut self.inflight {
+                        if store.remove_job(outcome.job.job_id) {
+                            if let Err(err) = store.persist().await {
+                                self.emit(EngineEvent::Warning {
+                                    message: format!("warning: failed to persist inflight leases: {err:#}"),
+                                });
+                            }
+                        }
+                    }
                 }
 
                 self.emit(EngineEvent::JobFinished { outcome });
@@ -453,7 +481,7 @@ impl EngineRuntime {
                         None => std::future::pending::<Result<anyhow::Result<Vec<WorkJobItem>>, tokio::task::JoinError>>().await,
                     }
                 } => {
-                    self.handle_fetch_result(res);
+                    self.handle_fetch_result(res).await;
                     Ok(())
                 }
                 _ = async {
@@ -599,6 +627,34 @@ async fn run_engine(
 
     let workers = (0..cfg.parallel).map(|_| WorkerRuntime::new()).collect();
 
+    let mut inflight = match InflightStore::load() {
+        Ok(Some(store)) => Some(store),
+        Ok(None) => None,
+        Err(err) => {
+            let message = format!("warning: failed to load inflight leases (resume disabled): {err:#}");
+            let _ = inner.event_tx.send(EngineEvent::Warning { message });
+            None
+        }
+    };
+
+    let mut pending = VecDeque::new();
+    if let Some(store) = inflight.as_ref() {
+        for entry in store.entries() {
+            pending.push_back(WorkJobItem {
+                lease_id: entry.lease_id.clone(),
+                lease_expires_at: entry.lease_expires_at,
+                job: entry.job.clone(),
+            });
+        }
+        if !pending.is_empty() {
+            let message = format!(
+                "Loaded {} inflight lease(s) from previous run; processing them before leasing new work.",
+                pending.len()
+            );
+            let _ = inner.event_tx.send(EngineEvent::Warning { message });
+        }
+    }
+
     let runtime = EngineRuntime {
         http,
         cfg,
@@ -607,10 +663,10 @@ async fn run_engine(
         worker_progress,
         internal_rx,
         worker_join,
-        pending: VecDeque::new(),
+        pending,
         fetch_task: None,
         fetch_backoff: None,
-        first_fetch_include_already_leased: true,
+        inflight: inflight.take(),
         recent_jobs: VecDeque::new(),
         snapshot_tx,
         inner,

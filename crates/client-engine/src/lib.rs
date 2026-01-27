@@ -9,6 +9,7 @@ pub mod api;
 
 mod backend;
 mod engine;
+mod inflight;
 mod worker;
 
 pub use api::{
