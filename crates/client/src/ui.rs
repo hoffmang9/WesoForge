@@ -27,11 +27,12 @@ impl Ui {
         mp.set_move_cursor(true);
 
         let global_pb = mp.add(ProgressBar::new(0));
-        let style = ProgressStyle::with_template("{msg}").unwrap();
+        let style = ProgressStyle::with_template("{msg}\u{1b}[0K").unwrap();
         global_pb.set_style(style);
         global_pb.set_message("Global: 0 it/s");
 
-        let worker_style = ProgressStyle::with_template("{prefix} {bar:20.cyan/blue} {msg}")
+        let worker_style =
+            ProgressStyle::with_template("{prefix} {bar:20.cyan/blue} {msg}\u{1b}[0K")
             .unwrap()
             .progress_chars("#--");
 
@@ -49,7 +50,7 @@ impl Ui {
         }
 
         let stop_pb = mp.add(ProgressBar::new(0));
-        let style = ProgressStyle::with_template("{msg}").unwrap();
+        let style = ProgressStyle::with_template("{msg}\u{1b}[0K").unwrap();
         stop_pb.set_style(style);
         stop_pb.set_message(" ");
 
@@ -101,7 +102,7 @@ impl Ui {
             return;
         };
         state.bar.set_position(0);
-        state.bar.set_message("Idle");
+        state.bar.set_message("Idle".to_string());
         state.total_iters = 0;
         state.last_step = 0;
     }
@@ -147,4 +148,3 @@ mod tests {
         assert_eq!(calc_progress_step(100, 1000), steps);
     }
 }
-

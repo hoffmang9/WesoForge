@@ -4,8 +4,11 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use reqwest::Url;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, State};
 use tokio::sync::Mutex;
+
+#[cfg(feature = "support-devtools")]
+use tauri::Manager;
 
 use bbr_client_core::submitter::{SubmitterConfig, load_submitter_config, save_submitter_config};
 use bbr_client_engine::{EngineConfig, EngineEvent, EngineHandle, StatusSnapshot, start_engine};
@@ -189,6 +192,7 @@ fn main() {
     tauri::Builder::default()
         .manage(state)
         .setup(|app| {
+            let _ = app;
             #[cfg(feature = "support-devtools")]
             {
                 if let Some(win) = app.get_webview_window("main") {
