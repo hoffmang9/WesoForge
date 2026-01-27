@@ -1,5 +1,6 @@
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
+use reqwest::header;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 
@@ -14,6 +15,66 @@ pub(crate) enum BackendError {
 #[derive(Debug, Deserialize)]
 struct ApiErrorBody {
     code: String,
+}
+
+fn is_html_error(content_type: &str, body: &str) -> bool {
+    if content_type.to_ascii_lowercase().contains("text/html") {
+        return true;
+    }
+    let trimmed = body.trim_start();
+    trimmed.starts_with("<!DOCTYPE")
+        || trimmed.starts_with("<!doctype")
+        || trimmed.starts_with("<html")
+        || trimmed.starts_with("<HTML")
+        || trimmed.starts_with('<')
+}
+
+fn truncate_one_line(body: &str, max_len: usize) -> String {
+    let mut out = String::with_capacity(body.len().min(max_len));
+    for ch in body.chars() {
+        if out.len() >= max_len {
+            out.push('…');
+            break;
+        }
+        match ch {
+            '\r' | '\n' | '\t' => out.push(' '),
+            ch => out.push(ch),
+        }
+    }
+    out.trim().to_string()
+}
+
+async fn error_from_response(res: reqwest::Response) -> anyhow::Error {
+    let status = res.status();
+    let url = res.url().clone();
+    let content_type = res
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    let body = res.text().await.unwrap_or_default();
+
+    if let Ok(err) = serde_json::from_str::<ApiErrorBody>(&body) {
+        if status == reqwest::StatusCode::BAD_REQUEST && err.code == "invalid_reward_address" {
+            return BackendError::InvalidRewardAddress.into();
+        }
+        if status == reqwest::StatusCode::CONFLICT && err.code == "lease_invalid" {
+            return BackendError::LeaseInvalid.into();
+        }
+        return anyhow::anyhow!("backend error ({status}) for {url}: {}", err.code);
+    }
+
+    if is_html_error(&content_type, &body) {
+        return anyhow::anyhow!("backend error ({status}) for {url}");
+    }
+
+    let snippet = truncate_one_line(&body, 200);
+    if snippet.is_empty() {
+        anyhow::anyhow!("backend error ({status}) for {url}")
+    } else {
+        anyhow::anyhow!("backend error ({status}) for {url}: {snippet}")
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -78,17 +139,7 @@ pub(crate) async fn fetch_work(
         .await?;
 
     if !res.status().is_success() {
-        let status = res.status();
-        let body = res.text().await.unwrap_or_default();
-        if let Ok(err) = serde_json::from_str::<ApiErrorBody>(&body) {
-            if status == reqwest::StatusCode::BAD_REQUEST && err.code == "invalid_reward_address" {
-                return Err(BackendError::InvalidRewardAddress.into());
-            }
-            if status == reqwest::StatusCode::CONFLICT && err.code == "lease_invalid" {
-                return Err(BackendError::LeaseInvalid.into());
-            }
-        }
-        anyhow::bail!("http {status}: {body}");
+        return Err(error_from_response(res).await);
     }
     Ok(res.json().await?)
 }
@@ -115,17 +166,7 @@ pub(crate) async fn submit_job(
         .await?;
 
     if !res.status().is_success() {
-        let status = res.status();
-        let body = res.text().await.unwrap_or_default();
-        if let Ok(err) = serde_json::from_str::<ApiErrorBody>(&body) {
-            if status == reqwest::StatusCode::BAD_REQUEST && err.code == "invalid_reward_address" {
-                return Err(BackendError::InvalidRewardAddress.into());
-            }
-            if status == reqwest::StatusCode::CONFLICT && err.code == "lease_invalid" {
-                return Err(BackendError::LeaseInvalid.into());
-            }
-        }
-        anyhow::bail!("http {status}: {body}");
+        return Err(error_from_response(res).await);
     }
     Ok(res.json().await?)
 }
