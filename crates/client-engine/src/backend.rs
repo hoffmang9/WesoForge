@@ -19,6 +19,8 @@ pub(crate) enum BackendError {
 #[derive(Debug, Deserialize)]
 struct ApiErrorBody {
     code: String,
+    #[serde(default)]
+    message: String,
 }
 
 fn is_html_error(content_type: &str, body: &str) -> bool {
@@ -63,7 +65,10 @@ async fn error_from_response(res: reqwest::Response) -> anyhow::Error {
         if status == reqwest::StatusCode::BAD_REQUEST && err.code == "invalid_reward_address" {
             return BackendError::InvalidRewardAddress.into();
         }
-        if status == reqwest::StatusCode::NOT_FOUND && err.code == "job_not_found" {
+        if status == reqwest::StatusCode::NOT_FOUND
+            && (err.code == "job_not_found"
+                || err.message.trim_start().starts_with("job_not_found"))
+        {
             return BackendError::JobNotFound.into();
         }
         if status == reqwest::StatusCode::CONFLICT {
@@ -72,15 +77,19 @@ async fn error_from_response(res: reqwest::Response) -> anyhow::Error {
             }
             return BackendError::LeaseConflict.into();
         }
-        return anyhow::anyhow!("backend error ({status}) for {url}: {}", err.code);
+
+        if err.message.trim().is_empty() {
+            return anyhow::anyhow!("backend error ({status}) for {url}: {}", err.code);
+        }
+        return anyhow::anyhow!(
+            "backend error ({status}) for {url}: {} ({})",
+            err.code,
+            truncate_one_line(&err.message, 200)
+        );
     }
 
     if status == reqwest::StatusCode::CONFLICT {
         return BackendError::LeaseConflict.into();
-    }
-
-    if status == reqwest::StatusCode::NOT_FOUND {
-        return BackendError::JobNotFound.into();
     }
 
     if is_html_error(&content_type, &body) {
