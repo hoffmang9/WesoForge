@@ -95,6 +95,6 @@ if [[ -z "${VERSION:-}" ]]; then
 fi
 ARCH="$(platform_arch)"
 
-APPIMAGE_DST="$DIST_DIR/${OUT_PREFIX}_${VERSION}_${ARCH}.AppImage"
+APPIMAGE_DST="$DIST_DIR/${OUT_PREFIX}_Linux_${VERSION}_${ARCH}.AppImage"
 install -m 0755 "$APPIMAGE_SRC" "$APPIMAGE_DST"
 echo "Wrote: $APPIMAGE_DST" >&2

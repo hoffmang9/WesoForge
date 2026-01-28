@@ -68,6 +68,12 @@ or set BBR_CHIAVDF_DIR to a chiavdf checkout.",
         chiavdf_src.join("refcode").join("lzcnt.c").display()
     );
 
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    if target_os == "windows" {
+        build_windows_fallback(&manifest_dir, &chiavdf_dir, &chiavdf_src);
+        return;
+    }
+
     let status = Command::new("make")
         .arg("-C")
         .arg(&chiavdf_src)
@@ -94,7 +100,6 @@ or set BBR_CHIAVDF_DIR to a chiavdf checkout.",
 
     // We link C++ objects, so we need the C++ standard library.
     // Keep it simple: this project currently targets Linux.
-    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     if target_os == "macos" {
         println!("cargo:rustc-link-lib=c++");
     } else if target_os != "windows" {
@@ -106,4 +111,51 @@ or set BBR_CHIAVDF_DIR to a chiavdf checkout.",
     if target_os == "linux" {
         println!("cargo:rustc-link-arg=-no-pie");
     }
+}
+
+fn build_windows_fallback(manifest_dir: &PathBuf, chiavdf_dir: &PathBuf, chiavdf_src: &PathBuf) {
+    let fallback_cpp = manifest_dir.join("native").join("chiavdf_fast_fallback.cpp");
+    println!("cargo:rerun-if-changed={}", fallback_cpp.display());
+
+    // The chiavdf repository expects the MPIR (GMP-compatible) Windows bundle to
+    // live at `chiavdf/mpir_gc_x64`.
+    let mpir_dir = chiavdf_dir.join("mpir_gc_x64");
+    let mpir_lib = mpir_dir.join("mpir.lib");
+    if !mpir_lib.exists() {
+        panic!(
+            "mpir.lib not found at {}. Ensure chiavdf/mpir_gc_x64 is present (see chiavdf's pyproject.toml windows build instructions).",
+            mpir_lib.display()
+        );
+    }
+
+    // The chiavdf sources use GNU/Clang builtins (e.g. __builtin_clzll) even
+    // on Windows. Compile this fallback with clang-cl for compatibility.
+    //
+    // Prefer an explicit path if the user configured one; otherwise fall back
+    // to the default winget install location.
+    let clang_cl = env::var("BBR_CLANG_CL").unwrap_or_else(|_| {
+        let default = PathBuf::from(r"C:\Program Files\LLVM\bin\clang-cl.exe");
+        if default.exists() {
+            default.to_string_lossy().to_string()
+        } else {
+            "clang-cl".to_string()
+        }
+    });
+
+    let mut build = cc::Build::new();
+    build.cpp(true);
+    build.compiler(clang_cl);
+    build.flag("/std:c++17");
+    build.flag("/EHsc");
+    build.flag("/O2");
+    build.define("_CRT_SECURE_NO_WARNINGS", None);
+    build.include(chiavdf_src);
+    build.include(&mpir_dir);
+    build.file(fallback_cpp);
+    build.file(chiavdf_src.join("refcode").join("lzcnt.c"));
+    build.compile("chiavdf_fastc");
+
+    // Link against MPIR (GMP-compatible) import library.
+    println!("cargo:rustc-link-search=native={}", mpir_dir.display());
+    println!("cargo:rustc-link-lib=mpir");
 }

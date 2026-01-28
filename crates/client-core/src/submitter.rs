@@ -34,6 +34,28 @@ fn xdg_config_home() -> anyhow::Result<PathBuf> {
         return Ok(dir);
     }
 
+    // On Windows we should not require HOME to be set: the conventional location
+    // for per-user application config is %APPDATA% (Roaming).
+    #[cfg(windows)]
+    {
+        if let Some(dir) = std::env::var_os("APPDATA") {
+            let dir = PathBuf::from(dir);
+            if dir.as_os_str().is_empty() {
+                anyhow::bail!("APPDATA is set but empty");
+            }
+            return Ok(dir);
+        }
+
+        // Some restricted environments might not set APPDATA; fall back to USERPROFILE.
+        if let Some(dir) = std::env::var_os("USERPROFILE") {
+            let dir = PathBuf::from(dir);
+            if dir.as_os_str().is_empty() {
+                anyhow::bail!("USERPROFILE is set but empty");
+            }
+            return Ok(dir.join("AppData").join("Roaming"));
+        }
+    }
+
     let home = std::env::var_os("HOME").ok_or_else(|| anyhow::anyhow!("HOME is not set"))?;
     let home = PathBuf::from(home);
     if home.as_os_str().is_empty() {

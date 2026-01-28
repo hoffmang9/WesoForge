@@ -10,3 +10,6 @@ path = "src/lib.rs"
 [dependencies]
 thiserror = { workspace = true }
 
+[build-dependencies]
+cc = "1.2.54"
+

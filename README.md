@@ -9,6 +9,56 @@ https://github.com/Ealrann/chiavdf
 
 ## Build (from source)
 
+### Windows (CLI)
+
+Prereqs:
+- Rust (via rustup)
+- Visual Studio 2022 (MSVC + Windows SDK)
+- LLVM (for `clang-cl`) *(or set `BBR_CLANG_CL` to your `clang-cl.exe` path)*
+
+Setup:
+
+```powershell
+git submodule update --init --recursive
+cd chiavdf
+git clone https://github.com/Chia-Network/mpir_gc_x64.git
+cd ..
+```
+
+Build (release):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\\build-cli.ps1
+```
+
+The artifact is written under `dist/` (and includes the required `mpir*.dll` runtime files).
+
+### Windows (GUI, portable ZIP)
+
+Prereqs:
+- Rust (via rustup)
+- Node.js `20.19+` (or `22.12+`) + `pnpm`
+- Visual Studio 2022 (MSVC + Windows SDK)
+- LLVM (for `clang-cl`) *(or set `BBR_CLANG_CL` to your `clang-cl.exe` path)*
+- Tauri CLI: `cargo install tauri-cli`
+
+Setup:
+
+```powershell
+git submodule update --init --recursive
+cd chiavdf
+git clone https://github.com/Chia-Network/mpir_gc_x64.git
+cd ..
+```
+
+Build + package (portable ZIP):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\\build-gui.ps1
+```
+
+The artifact is written under `dist/WesoForge-gui_Windows_<version>_<arch>.zip`.
+
 ### CLI (release)
 
 Builds the production client (default backend = `https://weso.forgeros.fr/`) and writes a versioned artifact under `dist/`:
@@ -41,8 +91,13 @@ Notes:
 ### GUI
 
 ```bash
-./dist/WesoForge-gui_<version>_<arch>.AppImage
+./dist/WesoForge-gui_Linux_<version>_<arch>.AppImage
 ```
+
+### GUI (Windows, portable)
+
+- Unzip `dist/WesoForge-gui_Windows_<version>_<arch>.zip`
+- Run `WesoForge\\WesoForge.exe`
 
 ### CLI
 
