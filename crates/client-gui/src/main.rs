@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,9 +12,9 @@ use tauri::Manager;
 use bbr_client_core::submitter::{SubmitterConfig, load_submitter_config, save_submitter_config};
 use bbr_client_engine::{EngineConfig, EngineEvent, EngineHandle, StatusSnapshot, start_engine};
 
-#[derive(Default)]
 struct GuiState {
     engine: Mutex<Option<EngineHandle>>,
+    progress: Mutex<Vec<WorkerProgressUpdate>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -26,10 +25,13 @@ struct WorkerProgressUpdate {
     iters_per_sec: u64,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type")]
-enum GuiEngineEvent {
-    ProgressBatch { updates: Vec<WorkerProgressUpdate> },
+impl Default for GuiState {
+    fn default() -> Self {
+        Self {
+            engine: Mutex::new(None),
+            progress: Mutex::new(Vec::new()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -63,6 +65,12 @@ async fn get_submitter_config() -> Result<Option<SubmitterConfig>, String> {
 #[tauri::command]
 async fn set_submitter_config(cfg: SubmitterConfig) -> Result<(), String> {
     save_submitter_config(&cfg).map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+async fn engine_progress(state: State<'_, Arc<GuiState>>) -> Result<Vec<WorkerProgressUpdate>, String> {
+    let progress = state.progress.lock().await;
+    Ok(progress.clone())
 }
 
 #[tauri::command]
@@ -102,43 +110,100 @@ async fn start_client(
 
     let mut events = engine.subscribe();
     let app = app.clone();
-    tokio::spawn(async move {
-        let mut pending_progress: HashMap<usize, WorkerProgressUpdate> = HashMap::new();
-        let mut flush_tick = tokio::time::interval(GUI_PROGRESS_TICK);
-        flush_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+    {
+        let mut progress = state.progress.lock().await;
+        progress.clear();
+        progress.reserve(parallel);
+        for worker_idx in 0..parallel {
+            progress.push(WorkerProgressUpdate {
+                worker_idx,
+                iters_done: 0,
+                iters_total: 0,
+                iters_per_sec: 0,
+            });
+        }
+    }
+    tokio::spawn(async move {
         loop {
-            tokio::select! {
-                ev = events.recv() => {
-                    match ev {
-                        Ok(ev) => {
-                            if let EngineEvent::WorkerProgress { worker_idx, iters_done, iters_total, iters_per_sec } = ev {
-                                pending_progress.insert(worker_idx, WorkerProgressUpdate {
-                                    worker_idx,
-                                    iters_done,
-                                    iters_total,
-                                    iters_per_sec,
-                                });
-                            } else {
-                                if let EngineEvent::Error { message } = &ev {
-                                    eprintln!("{message}");
-                                }
-                                let is_stopped = matches!(ev, EngineEvent::Stopped);
-                                let _ = app.emit("engine-event", ev);
-                                if is_stopped {
-                                    break;
-                                }
-                            }
-                        }
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            let ev = match events.recv().await {
+                Ok(ev) => ev,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            };
+
+            match &ev {
+                EngineEvent::WorkerProgress {
+                    worker_idx,
+                    iters_done,
+                    iters_total,
+                    iters_per_sec,
+                } => {
+                    let mut progress = state_for_task.progress.lock().await;
+                    while progress.len() <= *worker_idx {
+                        let idx = progress.len();
+                        progress.push(WorkerProgressUpdate {
+                            worker_idx: idx,
+                            iters_done: 0,
+                            iters_total: 0,
+                            iters_per_sec: 0,
+                        });
                     }
+                    progress[*worker_idx] = WorkerProgressUpdate {
+                        worker_idx: *worker_idx,
+                        iters_done: *iters_done,
+                        iters_total: *iters_total,
+                        iters_per_sec: *iters_per_sec,
+                    };
                 }
-                _ = flush_tick.tick() => {
-                    if !pending_progress.is_empty() {
-                        let mut updates: Vec<WorkerProgressUpdate> = pending_progress.drain().map(|(_, v)| v).collect();
-                        updates.sort_by_key(|u| u.worker_idx);
-                        let _ = app.emit("engine-event", GuiEngineEvent::ProgressBatch { updates });
+                EngineEvent::WorkerJobStarted { worker_idx, job } => {
+                    let mut progress = state_for_task.progress.lock().await;
+                    while progress.len() <= *worker_idx {
+                        let idx = progress.len();
+                        progress.push(WorkerProgressUpdate {
+                            worker_idx: idx,
+                            iters_done: 0,
+                            iters_total: 0,
+                            iters_per_sec: 0,
+                        });
+                    }
+                    progress[*worker_idx] = WorkerProgressUpdate {
+                        worker_idx: *worker_idx,
+                        iters_done: 0,
+                        iters_total: job.number_of_iterations,
+                        iters_per_sec: 0,
+                    };
+                    let _ = app.emit("engine-event", ev);
+                }
+                EngineEvent::JobFinished { outcome } => {
+                    let worker_idx = outcome.worker_idx;
+                    let mut progress = state_for_task.progress.lock().await;
+                    while progress.len() <= worker_idx {
+                        let idx = progress.len();
+                        progress.push(WorkerProgressUpdate {
+                            worker_idx: idx,
+                            iters_done: 0,
+                            iters_total: 0,
+                            iters_per_sec: 0,
+                        });
+                    }
+                    progress[worker_idx] = WorkerProgressUpdate {
+                        worker_idx,
+                        iters_done: 0,
+                        iters_total: 0,
+                        iters_per_sec: 0,
+                    };
+                    let _ = app.emit("engine-event", ev);
+                }
+                EngineEvent::Error { message } => {
+                    eprintln!("{message}");
+                    let _ = app.emit("engine-event", ev);
+                }
+                _ => {
+                    let is_stopped = matches!(ev, EngineEvent::Stopped);
+                    let _ = app.emit("engine-event", ev);
+                    if is_stopped {
+                        break;
                     }
                 }
             }
@@ -146,6 +211,9 @@ async fn start_client(
 
         let mut guard = state_for_task.engine.lock().await;
         *guard = None;
+
+        let mut progress = state_for_task.progress.lock().await;
+        progress.clear();
     });
 
     *guard = Some(engine);
@@ -204,6 +272,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_submitter_config,
             set_submitter_config,
+            engine_progress,
             start_client,
             stop_client,
             client_running,

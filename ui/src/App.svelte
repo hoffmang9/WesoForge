@@ -49,8 +49,6 @@
     | { type: 'Started' }
     | { type: 'StopRequested' }
     | { type: 'WorkerJobStarted'; worker_idx: number; job: JobSummary }
-    | { type: 'WorkerProgress'; worker_idx: number; iters_done: number; iters_total: number; iters_per_sec: number }
-    | { type: 'ProgressBatch'; updates: WorkerProgressUpdate[] }
     | { type: 'WorkerStage'; worker_idx: number; stage: WorkerStage }
     | { type: 'JobFinished'; outcome: JobOutcome }
     | { type: 'Warning'; message: string }
@@ -223,6 +221,40 @@
     }
   }
 
+  function progressPollDelayMs() {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      return 5000;
+    }
+    if (typeof document !== 'undefined' && typeof document.hasFocus === 'function' && !document.hasFocus()) {
+      return 1000;
+    }
+    return 500;
+  }
+
+  async function pollProgress(signal: AbortSignal) {
+    while (!signal.aborted) {
+      if (!running) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        continue;
+      }
+
+      try {
+        const updates = await invoke<WorkerProgressUpdate[]>('engine_progress');
+        for (const u of updates) {
+          patchWorker(u.worker_idx, {
+            iters_done: u.iters_done,
+            iters_total: u.iters_total,
+            iters_per_sec: u.iters_per_sec
+          });
+        }
+      } catch {
+        // ignore
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, progressPollDelayMs()));
+    }
+  }
+
   function handleEngineEvent(ev: EngineEvent) {
     switch (ev.type) {
       case 'Started':
@@ -246,22 +278,6 @@
         break;
       case 'WorkerStage':
         patchWorker(ev.worker_idx, { stage: ev.stage });
-        break;
-      case 'WorkerProgress':
-        patchWorker(ev.worker_idx, {
-          iters_done: ev.iters_done,
-          iters_total: ev.iters_total,
-          iters_per_sec: ev.iters_per_sec
-        });
-        break;
-      case 'ProgressBatch':
-        for (const u of ev.updates) {
-          patchWorker(u.worker_idx, {
-            iters_done: u.iters_done,
-            iters_total: u.iters_total,
-            iters_per_sec: u.iters_per_sec
-          });
-        }
         break;
       case 'JobFinished': {
         const { outcome } = ev;
@@ -394,6 +410,10 @@
       .catch((err) => {
         pushLog('error', `Failed to subscribe to engine events: ${String(err)}`);
       });
+
+    const progressPoll = new AbortController();
+    onDestroy(() => progressPoll.abort());
+    void pollProgress(progressPoll.signal);
 
     let saved: string | null = null;
     try {
