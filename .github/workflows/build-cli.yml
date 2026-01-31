@@ -90,7 +90,11 @@ jobs:
         run: |
           $bin = "target\release\wesoforge.exe"
           if (-not (Test-Path $bin)) { throw "Binary not found: $bin" }
-          $output = & $bin -h 2>&1 | Out-String
+          # Clap prints -h to stderr; capture both streams so we get the full help text
+          $outFile = "help-stdout.txt"
+          $errFile = "help-stderr.txt"
+          $p = Start-Process -FilePath $bin -ArgumentList "-h" -NoNewWindow -Wait -PassThru -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+          $output = (Get-Content $outFile -Raw) + (Get-Content $errFile -Raw)
           Write-Host $output
           Write-Host "---"
           if ($output -notmatch "WesoForge") { throw "Expected -h output to contain 'WesoForge'" }
