@@ -23,16 +23,16 @@ jobs:
         include:
           - os: Linux
             runner: ubuntu-latest
-            arch: x64
+            arch: amd64
           - os: macOS
             runner: macos-latest
-            arch: ARM64
+            arch: arm64
           - os: macOS
             runner: macos-15-intel
-            arch: x64
+            arch: amd64
           - os: Windows
             runner: windows-latest
-            arch: x64
+            arch: amd64
 
     steps:
       - name: Checkout
@@ -61,7 +61,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y git curl build-essential clang libgmp-dev libboost-all-dev gawk pkg-config
-          sudo apt-get install -y pkg-config libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev
+          sudo apt-get install -y pkg-config libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev
 
       - name: Extract linuxdeploy for CI (no FUSE)
         if: matrix.os == 'Linux'
@@ -114,6 +114,46 @@ jobs:
         run: |
           echo "$env:ProgramFiles\LLVM\bin" | Out-File -Append -FilePath $env:GITHUB_PATH
           echo "PATH=$env:ProgramFiles\LLVM\bin;$env:PATH" >> $env:GITHUB_ENV
+
+      - name: Determine version (Linux / macOS)
+        if: matrix.os != 'Windows'
+        run: |
+          VERSION="$(python3 - <<'PY'
+          import tomllib
+          with open("Cargo.toml", "rb") as f:
+            cargo = tomllib.load(f)
+          print(cargo["workspace"]["package"]["version"])
+          PY
+          )"
+          if [ -z "${VERSION:-}" ]; then
+            echo "Failed to determine version from Cargo.toml" >&2
+            exit 1
+          fi
+          echo "WESOFORGE_VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Determine version (Windows)
+        if: matrix.os == 'Windows'
+        shell: pwsh
+        run: |
+          $inPkg = $false
+          $version = $null
+          foreach ($line in Get-Content -LiteralPath "Cargo.toml") {
+            if ($line -match '^\[workspace\.package\]') {
+              $inPkg = $true
+              continue
+            }
+            if ($inPkg -and $line -match '^\[') {
+              $inPkg = $false
+            }
+            if ($inPkg -and $line -match '^version\s*=\s*"([^"]+)"') {
+              $version = $Matches[1]
+              break
+            }
+          }
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw "Failed to determine version from Cargo.toml"
+          }
+          Add-Content -Path $env:GITHUB_ENV -Value "WESOFORGE_VERSION=$version"
 
       - name: Install pnpm and Tauri CLI, then build Rust (CLI + GUI once)
         shell: bash
@@ -207,7 +247,9 @@ jobs:
         run: ./build-gui.ps1
 
       - name: Upload dist artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dist-${{ matrix.os }}-${{ matrix.arch }}
-          path: dist/
+          name: WesoForge-cli_${{ matrix.os }}_${{ env.WESOFORGE_VERSION }}_${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: warn
