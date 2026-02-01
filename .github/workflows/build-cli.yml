@@ -47,8 +47,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 'lts/*'
-          cache: 'pnpm'
-          cache-dependency-path: ui/pnpm-lock.yaml
 
       - name: Install pnpm and Tauri CLI (Linux / macOS / Windows)
         if: matrix.os == 'Linux' || matrix.os == 'macOS' || matrix.os == 'Windows'
