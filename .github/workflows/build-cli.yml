@@ -14,6 +14,9 @@ jobs:
   build-and-test:
     name: ${{ matrix.os }} (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
+    env:
+      # Linux: run AppImages without FUSE (extract and run) so downloaded linuxdeploy works in CI
+      APPIMAGE_EXTRACT_AND_RUN: ${{ matrix.os == 'Linux' && '1' || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -109,14 +112,16 @@ jobs:
       - name: Install pnpm and Tauri CLI, then build Rust (CLI + GUI once)
         shell: bash
         env:
-          # Pin target dir so the explicit cargo build and cargo tauri build share
-          # artifacts; otherwise chiavdf-fast (and other deps) can compile twice.
           CARGO_TARGET_DIR: ${{ github.workspace }}/target
         run: |
           corepack enable
           corepack prepare pnpm@latest --activate
           cargo install tauri-cli
           pnpm -C ui install
+          # On Linux, force GUI rebuild so release binary has symbols (strip = false) for Tauri patch
+          if [ "$(uname -s)" = "Linux" ]; then
+            cargo clean -p bbr-client-gui
+          fi
           cargo build --release -p bbr-client -p bbr-client-gui --features prod-backend
           case "$(uname -s)" in
             Linux)
