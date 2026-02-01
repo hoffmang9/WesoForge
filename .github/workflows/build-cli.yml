@@ -135,7 +135,7 @@ jobs:
               # Empty cache so bundler uses LINUXDEPLOY instead of cached AppImage
               export XDG_CACHE_HOME="${RUNNER_TEMP:-/tmp}/tauri-cache-empty"
               mkdir -p "$XDG_CACHE_HOME"
-              (cd crates/client-gui && export NO_STRIP=1 && cargo tauri build -vv --features prod-backend --bundles appimage)
+              (cd crates/client-gui && export NO_STRIP=1 && cargo tauri build -v --features prod-backend --bundles appimage)
               ;;
             Darwin) (cd crates/client-gui && cargo tauri build --features prod-backend --bundles dmg) ;;
             *) (cd crates/client-gui && cargo tauri build --features prod-backend) ;;
