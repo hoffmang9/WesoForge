@@ -118,16 +118,15 @@ jobs:
           corepack prepare pnpm@latest --activate
           cargo install tauri-cli
           pnpm -C ui install
-          # On Linux, force GUI rebuild so release binary has symbols (strip = false) for Tauri patch
-          if [ "$(uname -s)" = "Linux" ]; then
-            cargo clean -p bbr-client-gui
-          fi
-          cargo build --release -p bbr-client -p bbr-client-gui --features prod-backend
+          # Build CLI only here; GUI is built by cargo tauri build so its binary has __TAURI_BUNDLE_TYPE
+          cargo build --release -p bbr-client --features prod-backend
           case "$(uname -s)" in
             Linux)
               export LINUXDEPLOY="${RUNNER_TEMP:-/tmp}/linuxdeploy/bin/AppRun"
               export PATH="${RUNNER_TEMP:-/tmp}/linuxdeploy/bin:$PATH"
-              (cd crates/client-gui && cargo tauri build --features prod-backend --bundles appimage)
+              export APPIMAGE_EXTRACT_AND_RUN=1
+              export TMPDIR="${RUNNER_TEMP:-/tmp}"
+              (cd crates/client-gui && export NO_STRIP=1 && cargo tauri build --features prod-backend --bundles appimage)
               ;;
             Darwin) (cd crates/client-gui && cargo tauri build --features prod-backend --bundles dmg) ;;
           esac
