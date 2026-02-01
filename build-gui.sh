@@ -85,16 +85,18 @@ if [[ "${CARGO_OFFLINE:-0}" == "1" ]]; then
 fi
 
 if [[ "$UNAME" == "Linux" ]]; then
-  echo "Building WesoForge GUI AppImage (features: $FEATURES)..." >&2
-  (
-    cd crates/client-gui
-    export NO_STRIP=1
-    if [[ "${#CARGO_ARGS[@]}" -gt 0 ]]; then
-      cargo tauri build --features "$FEATURES" --bundles appimage -- "${CARGO_ARGS[@]}"
-    else
-      cargo tauri build --features "$FEATURES" --bundles appimage
-    fi
-  )
+  if [[ "${BBR_SKIP_CARGO_BUILD:-0}" != "1" ]]; then
+    echo "Building WesoForge GUI AppImage (features: $FEATURES)..." >&2
+    (
+      cd crates/client-gui
+      export NO_STRIP=1
+      if [[ "${#CARGO_ARGS[@]}" -gt 0 ]]; then
+        cargo tauri build --features "$FEATURES" --bundles appimage -- "${CARGO_ARGS[@]}"
+      else
+        cargo tauri build --features "$FEATURES" --bundles appimage
+      fi
+    )
+  fi
   APPIMAGE_DIR="$TARGET_DIR/release/bundle/appimage"
   APPIMAGE_SRC="$(ls -1t "$APPIMAGE_DIR"/*.AppImage 2>/dev/null | head -n 1 || true)"
   if [[ -z "$APPIMAGE_SRC" ]]; then
@@ -105,15 +107,17 @@ if [[ "$UNAME" == "Linux" ]]; then
   install -m 0755 "$APPIMAGE_SRC" "$APPIMAGE_DST"
   echo "Wrote: $APPIMAGE_DST" >&2
 elif [[ "$UNAME" == "Darwin" ]]; then
-  echo "Building WesoForge GUI (macOS DMG, features: $FEATURES)..." >&2
-  (
-    cd crates/client-gui
-    if [[ "${#CARGO_ARGS[@]}" -gt 0 ]]; then
-      cargo tauri build --features "$FEATURES" --bundles dmg -- "${CARGO_ARGS[@]}"
-    else
-      cargo tauri build --features "$FEATURES" --bundles dmg
-    fi
-  )
+  if [[ "${BBR_SKIP_CARGO_BUILD:-0}" != "1" ]]; then
+    echo "Building WesoForge GUI (macOS DMG, features: $FEATURES)..." >&2
+    (
+      cd crates/client-gui
+      if [[ "${#CARGO_ARGS[@]}" -gt 0 ]]; then
+        cargo tauri build --features "$FEATURES" --bundles dmg -- "${CARGO_ARGS[@]}"
+      else
+        cargo tauri build --features "$FEATURES" --bundles dmg
+      fi
+    )
+  fi
   DMG_DIR="$TARGET_DIR/release/bundle/dmg"
   DMG_SRC="$(ls -1t "$DMG_DIR"/*.dmg 2>/dev/null | head -n 1 || true)"
   if [[ -z "$DMG_SRC" ]]; then

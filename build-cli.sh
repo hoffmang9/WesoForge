@@ -41,15 +41,17 @@ fi
 rm -f "$TARGET_DIR/.wesoforge-write-test" >/dev/null 2>&1 || true
 export CARGO_TARGET_DIR="$TARGET_DIR"
 
-echo "Building WesoForge CLI (wesoforge)..." >&2
-CARGO_ARGS=(build -p bbr-client --release --features prod-backend)
-if [[ "${CARGO_LOCKED:-0}" == "1" ]]; then
-  CARGO_ARGS+=(--locked)
+if [[ "${BBR_SKIP_CARGO_BUILD:-0}" != "1" ]]; then
+  echo "Building WesoForge CLI (wesoforge)..." >&2
+  CARGO_ARGS=(build -p bbr-client --release --features prod-backend)
+  if [[ "${CARGO_LOCKED:-0}" == "1" ]]; then
+    CARGO_ARGS+=(--locked)
+  fi
+  if [[ "${CARGO_OFFLINE:-0}" == "1" ]]; then
+    CARGO_ARGS+=(--offline)
+  fi
+  cargo "${CARGO_ARGS[@]}"
 fi
-if [[ "${CARGO_OFFLINE:-0}" == "1" ]]; then
-  CARGO_ARGS+=(--offline)
-fi
-cargo "${CARGO_ARGS[@]}"
 
 VERSION="$(workspace_version)"
 if [[ -z "${VERSION:-}" ]]; then

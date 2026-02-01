@@ -61,8 +61,10 @@ if ([string]::IsNullOrWhiteSpace($DistDir)) {
 }
 New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
 
-Write-Host "Building WesoForge CLI (wesoforge)..." -ForegroundColor Cyan
-cargo build -p bbr-client --release --features prod-backend
+if ($env:BBR_SKIP_CARGO_BUILD -ne "1") {
+    Write-Host "Building WesoForge CLI (wesoforge)..." -ForegroundColor Cyan
+    cargo build -p bbr-client --release --features prod-backend
+}
 
 $Version = Get-WorkspaceVersion
 $Arch = Get-PlatformArch
