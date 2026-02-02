@@ -233,18 +233,10 @@ jobs:
           }
           Add-Content -Path $env:GITHUB_ENV -Value "WESOFORGE_VERSION=$version"
 
-      - name: Upload CLI artifacts
+      - name: Upload dist artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: WesoForge-cli_${{ matrix.os }}_${{ env.WESOFORGE_VERSION }}_${{ matrix.arch }}
-          path: dist/WesoForge-cli_*
-          if-no-files-found: warn
-
-      - name: Upload GUI artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: WesoForge-gui_${{ matrix.os }}_${{ env.WESOFORGE_VERSION }}_${{ matrix.arch }}
-          path: dist/WesoForge-gui_*
+          name: WesoForge_${{ matrix.os }}_${{ env.WESOFORGE_VERSION }}_${{ matrix.arch }}
+          path: dist/
           if-no-files-found: warn
