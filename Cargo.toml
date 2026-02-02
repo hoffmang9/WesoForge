@@ -8,6 +8,10 @@ members = [
 ]
 resolver = "2"
 
+# Keep symbols so Tauri can patch __TAURI_BUNDLE_TYPE into the AppImage binary.
+[profile.release]
+strip = false
+
 [workspace.package]
 edition = "2024"
 version = "1.0.0"

@@ -150,13 +150,15 @@ New-Item -ItemType Directory -Force -Path $AppDir | Out-Null
 
 Ensure-IconIco
 
-Write-Host "Building WesoForge GUI (Tauri, no bundle)..." -ForegroundColor Cyan
-Push-Location (Join-Path $Root "crates/client-gui")
-try {
-    cargo tauri build --no-bundle --features prod-backend
-}
-finally {
-    Pop-Location
+if ($env:BBR_SKIP_CARGO_BUILD -ne "1") {
+    Write-Host "Building WesoForge GUI (Tauri, no bundle)..." -ForegroundColor Cyan
+    Push-Location (Join-Path $Root "crates/client-gui")
+    try {
+        cargo tauri build --no-bundle --features prod-backend
+    }
+    finally {
+        Pop-Location
+    }
 }
 
 $Version = Get-WorkspaceVersion
