@@ -140,83 +140,22 @@ jobs:
           cargo install tauri-cli
           pnpm -C ui install
 
-      # Build Rust deps once: tauri build --no-bundle compiles GUI + all shared deps.
-      # Then build CLI only (reuses deps); then bundle (no recompile).
-      - name: Build GUI (Rust + frontend, no bundle) — compiles deps once
-        shell: bash
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/target
-        run: |
-          case "$(uname -s)" in
-            Linux) (cd crates/client-gui && export NO_STRIP=1 && cargo tauri build --no-bundle --features prod-backend) ;;
-            Darwin) (cd crates/client-gui && cargo tauri build --no-bundle --features prod-backend) ;;
-            *) (cd crates/client-gui && cargo tauri build --no-bundle --features prod-backend) ;;
-          esac
-
-      - name: Build CLI only (reuses existing deps)
-        shell: bash
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/target
-        run: cargo build --release -p bbr-client --features prod-backend
-
-      - name: Bundle GUI (no recompile)
-        shell: bash
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/target
-        run: |
-          case "$(uname -s)" in
-            Linux) (cd crates/client-gui && export NO_STRIP=1 && cargo tauri bundle --bundles appimage) ;;
-            Darwin) (cd crates/client-gui && cargo tauri bundle --bundles dmg) ;;
-            *) (cd crates/client-gui && cargo tauri bundle) ;;
-          esac
-
-      - name: Package CLI (Linux / macOS)
+      - name: Build CLI then GUI (Linux / macOS)
         if: matrix.os != 'Windows'
         env:
-          BBR_SKIP_CARGO_BUILD: 1
-        run: ./build-cli.sh
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target
+        run: |
+          ./build-cli.sh
+          ./build-gui.sh
 
-      - name: Package CLI (Windows)
+      - name: Build CLI then GUI (Windows)
         if: matrix.os == 'Windows'
         shell: pwsh
         env:
-          BBR_SKIP_CARGO_BUILD: 1
-        run: ./build-cli.ps1
-
-      - name: Copy GUI bundles to dist (Linux / macOS)
-        if: matrix.os != 'Windows'
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target
         run: |
-          VERSION="$WESOFORGE_VERSION"
-          ARCH="$(uname -m)"
-          case "$ARCH" in x86_64) ARCH=amd64;; aarch64|arm64) ARCH=arm64;; esac
-          case "$(uname -s)" in
-            Linux)
-              SRC="$(ls -1t target/release/bundle/appimage/*.AppImage 2>/dev/null | head -n 1)"
-              [ -n "$SRC" ] && cp "$SRC" "dist/WesoForge-gui_Linux_${VERSION}_${ARCH}.AppImage"
-              ;;
-            Darwin)
-              SRC="$(ls -1t target/release/bundle/dmg/*.dmg 2>/dev/null | head -n 1)"
-              [ -n "$SRC" ] && cp "$SRC" "dist/WesoForge-gui_macOS_${VERSION}_${ARCH}.dmg"
-              ;;
-          esac
-
-      - name: Copy GUI bundles to dist (Windows)
-        if: matrix.os == 'Windows'
-        shell: pwsh
-        run: |
-          $version = $env:WESOFORGE_VERSION
-          $arch = "amd64"
-          $bundleDir = Join-Path $env:CARGO_TARGET_DIR "release\bundle"
-          $nsisDir = Join-Path $bundleDir "nsis"
-          $msiDir = Join-Path $bundleDir "msi"
-          if (Test-Path $nsisDir) {
-            $exe = Get-ChildItem -Path $nsisDir -Filter "*.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-            if ($exe) { Copy-Item -Force $exe.FullName "dist\WesoForge-gui_Windows_${version}_${arch}.exe" }
-          }
-          if (Test-Path $msiDir) {
-            $msi = Get-ChildItem -Path $msiDir -Filter "*.msi" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-            if ($msi) { Copy-Item -Force $msi.FullName "dist\WesoForge-gui_Windows_${version}_${arch}.msi" }
-          }
+          ./build-cli.ps1
+          ./build-gui.ps1
 
       - name: Test -h output (Linux / macOS)
         if: matrix.os != 'Windows'
