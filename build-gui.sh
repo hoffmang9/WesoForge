@@ -84,6 +84,63 @@ if [[ "${CARGO_OFFLINE:-0}" == "1" ]]; then
   CARGO_ARGS+=(--offline)
 fi
 
+fix_linux_appimage_diricon() {
+  local appimage="$1"
+  if [[ ! -f "$appimage" ]]; then
+    return 0
+  fi
+  if ! command -v mksquashfs >/dev/null 2>&1; then
+    echo "warning: mksquashfs not found; skipping AppImage icon metadata normalization." >&2
+    return 0
+  fi
+
+  local workdir
+  workdir="$(mktemp -d)"
+  if ! (cd "$workdir" && APPIMAGE_EXTRACT_AND_RUN=1 "$appimage" --appimage-extract >/dev/null 2>&1); then
+    echo "warning: failed to extract AppImage for icon normalization; keeping original bundle." >&2
+    rm -rf "$workdir"
+    return 0
+  fi
+
+  local diricon="$workdir/squashfs-root/.DirIcon"
+  local diricon_target=""
+  if [[ -L "$diricon" ]]; then
+    diricon_target="$(readlink "$diricon" || true)"
+  fi
+  if [[ -z "$diricon_target" || "$diricon_target" != /* ]]; then
+    rm -rf "$workdir"
+    return 0
+  fi
+
+  local icon_name=""
+  if [[ -f "$workdir/squashfs-root/WesoForge.png" ]]; then
+    icon_name="WesoForge.png"
+  elif [[ -f "$workdir/squashfs-root/bbr-client-gui.png" ]]; then
+    icon_name="bbr-client-gui.png"
+  else
+    echo "warning: AppImage extracted but no icon payload found; skipping icon normalization." >&2
+    rm -rf "$workdir"
+    return 0
+  fi
+
+  ln -snf "$icon_name" "$diricon"
+
+  local offset=""
+  offset="$(APPIMAGE_EXTRACT_AND_RUN=1 "$appimage" --appimage-offset 2>/dev/null || true)"
+  if [[ ! "$offset" =~ ^[0-9]+$ ]]; then
+    echo "warning: failed to read AppImage runtime offset; keeping original bundle." >&2
+    rm -rf "$workdir"
+    return 0
+  fi
+
+  dd if="$appimage" of="$workdir/runtime" bs=1 count="$offset" status=none
+  mksquashfs "$workdir/squashfs-root" "$workdir/new.squashfs" -root-owned -noappend -quiet >/dev/null
+  cat "$workdir/runtime" "$workdir/new.squashfs" > "$workdir/fixed.AppImage"
+  chmod +x "$workdir/fixed.AppImage"
+  cp -f "$workdir/fixed.AppImage" "$appimage"
+  rm -rf "$workdir"
+}
+
 if [[ "$UNAME" == "Linux" ]]; then
   if [[ "${BBR_SKIP_CARGO_BUILD:-0}" != "1" ]]; then
     echo "Building WesoForge GUI AppImage (features: $FEATURES)..." >&2
@@ -103,6 +160,7 @@ if [[ "$UNAME" == "Linux" ]]; then
     echo "error: no AppImage found under: $APPIMAGE_DIR" >&2
     exit 1
   fi
+  fix_linux_appimage_diricon "$APPIMAGE_SRC"
   APPIMAGE_DST="$DIST_DIR/${OUT_PREFIX}_Linux_${VERSION}_${ARCH}.AppImage"
   install -m 0755 "$APPIMAGE_SRC" "$APPIMAGE_DST"
   echo "Wrote: $APPIMAGE_DST" >&2
