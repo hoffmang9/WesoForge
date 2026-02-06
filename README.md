@@ -9,12 +9,12 @@ https://github.com/Ealrann/chiavdf
 
 ## TL;DR Quick Start
 
-1. Run a prebuilt CLI binary
-   - Linux: `./dist/WesoForge-cli_Linux_<version>_<arch>`
-   - macOS: `./dist/WesoForge-cli_macOS_<version>_<arch>`
-   - Windows: `.\dist\WesoForge-cli_Windows_<version>_<arch>.exe`
-2. Build Linux CLI (release): `./build-cli.sh`
-3. Build Windows CLI (release): `powershell -ExecutionPolicy Bypass -File .\build-cli.ps1`
+- Run a prebuilt CLI binary (from your download folder)
+  - Linux: `./WesoForge-cli_Linux_<version>_<arch>`
+  - macOS: `./WesoForge-cli_macOS_<version>_<arch>`
+  - Windows: `.\WesoForge-cli_Windows_<version>_<arch>.exe`
+- Build Linux CLI (release): `./build-cli.sh`
+- Build Windows CLI (release): `powershell -ExecutionPolicy Bypass -File .\build-cli.ps1`
 
 ## Table of Contents
 
