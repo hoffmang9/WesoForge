@@ -9,6 +9,17 @@ use tokio::sync::mpsc;
 
 use crate::shutdown::{ShutdownController, ShutdownEvent};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TuiInputEvent {
+    ToggleTopMode,
+    LogUp,
+    LogDown,
+    LogPageUp,
+    LogPageDown,
+    LogHome,
+    LogEnd,
+}
+
 #[cfg(unix)]
 fn enable_onlcr() -> anyhow::Result<()> {
     use std::os::fd::AsRawFd as _;
@@ -36,6 +47,7 @@ impl TuiTerminal {
     pub fn enter(
         shutdown: Arc<ShutdownController>,
         shutdown_tx: mpsc::UnboundedSender<ShutdownEvent>,
+        input_tx: mpsc::UnboundedSender<TuiInputEvent>,
     ) -> anyhow::Result<Self> {
         crossterm::terminal::enable_raw_mode()?;
         execute!(std::io::stdout(), EnterAlternateScreen, Hide)?;
@@ -68,6 +80,21 @@ impl TuiTerminal {
                         } else {
                             let _ = shutdown_tx.send(ShutdownEvent::Immediate);
                         }
+                        continue;
+                    }
+
+                    let mapped = match key.code {
+                        KeyCode::Up => Some(TuiInputEvent::LogUp),
+                        KeyCode::Down => Some(TuiInputEvent::LogDown),
+                        KeyCode::PageUp => Some(TuiInputEvent::LogPageUp),
+                        KeyCode::PageDown => Some(TuiInputEvent::LogPageDown),
+                        KeyCode::Home => Some(TuiInputEvent::LogHome),
+                        KeyCode::End => Some(TuiInputEvent::LogEnd),
+                        KeyCode::Tab => Some(TuiInputEvent::ToggleTopMode),
+                        _ => None,
+                    };
+                    if let Some(ev) = mapped {
+                        let _ = input_tx.send(ev);
                     }
                 }
             }

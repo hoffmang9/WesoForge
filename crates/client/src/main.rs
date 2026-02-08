@@ -19,7 +19,7 @@ use crate::cli::{Cli, WorkMode};
 use crate::constants::PROGRESS_BAR_STEPS;
 use crate::format::{format_job_done_line, humanize_submit_reason};
 use crate::shutdown::{ShutdownController, ShutdownEvent, spawn_ctrl_c_handler};
-use crate::terminal::TuiTerminal;
+use crate::terminal::{TuiInputEvent, TuiTerminal};
 use crate::ui::Ui;
 
 fn format_outcome_status(outcome: &bbr_client_engine::JobOutcome) -> String {
@@ -90,8 +90,13 @@ async fn main() -> anyhow::Result<()> {
 
     let shutdown = std::sync::Arc::new(ShutdownController::new());
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::unbounded_channel::<ShutdownEvent>();
+    let (input_tx, mut input_rx) = tokio::sync::mpsc::unbounded_channel::<TuiInputEvent>();
     let tui_terminal = if tui_enabled && std::io::stdin().is_terminal() {
-        Some(TuiTerminal::enter(shutdown.clone(), shutdown_tx.clone())?)
+        Some(TuiTerminal::enter(
+            shutdown.clone(),
+            shutdown_tx.clone(),
+            input_tx,
+        )?)
     } else {
         None
     };
@@ -130,7 +135,7 @@ async fn main() -> anyhow::Result<()> {
     let mut worker_busy = vec![false; parallel];
     let mut worker_speed: Vec<u64> = vec![0; parallel];
 
-    let mut ticker = tokio::time::interval(Duration::from_millis(250));
+    let mut ticker = tokio::time::interval(Duration::from_millis(500));
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     let mut immediate_exit = false;
@@ -164,6 +169,11 @@ async fn main() -> anyhow::Result<()> {
                     let busy = worker_busy.iter().filter(|v| **v).count();
                     let speed: u64 = worker_speed.iter().sum();
                     ui.tick_global(speed, busy, parallel);
+                }
+            }
+            input_opt = input_rx.recv(), if tui_enabled => {
+                if let (Some(ui), Some(input)) = (&mut ui, input_opt) {
+                    ui.handle_input(input);
                 }
             }
             evt = events.recv() => {
