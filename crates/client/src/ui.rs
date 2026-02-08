@@ -25,12 +25,12 @@ impl Ui {
         mp.set_move_cursor(true);
 
         let global_pb = mp.add(ProgressBar::new(0));
-        let style = ProgressStyle::with_template("{msg}\u{1b}[0K").unwrap();
+        let style = ProgressStyle::with_template("{wide_msg}\u{1b}[0K").unwrap();
         global_pb.set_style(style);
         global_pb.set_message("Global: 0 it/s");
 
         let worker_style =
-            ProgressStyle::with_template("{prefix}  {percent:>3}%[{bar:20.cyan/blue}] {human_pos:>11} it  {iters_per_sec:>12}  {eta_precise} ETA   {msg}\u{1b}[0K")
+            ProgressStyle::with_template("{prefix}  {percent:>3}%[{bar:20.cyan/blue}] {human_pos:>11} it  {iters_per_sec:>12}  {eta_precise} ETA   {wide_msg}\u{1b}[0K")
             .unwrap()
             .with_key("iters_per_sec", |state: &ProgressState, w: &mut dyn std::fmt::Write| {
                 let _ = write!(w, "{} it/s", format_number(state.per_sec() as u64));
@@ -51,7 +51,7 @@ impl Ui {
         }
 
         let stop_pb = mp.add(ProgressBar::new(0));
-        let style = ProgressStyle::with_template("{msg}\u{1b}[0K").unwrap();
+        let style = ProgressStyle::with_template("{wide_msg}\u{1b}[0K").unwrap();
         stop_pb.set_style(style);
         stop_pb.set_message(" ");
 
