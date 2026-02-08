@@ -41,6 +41,10 @@ fn format_outcome_status(outcome: &bbr_client_engine::JobOutcome) -> String {
     status
 }
 
+fn should_log_warning_in_tui(message: &str) -> bool {
+    message.to_ascii_lowercase().contains("lease")
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
@@ -116,7 +120,7 @@ async fn main() -> anyhow::Result<()> {
         None
     };
     if let Some(ui) = &mut ui {
-        ui.println(&startup);
+        ui.set_status_prefix(&startup);
     } else {
         println!("{startup}");
     }
@@ -125,9 +129,7 @@ async fn main() -> anyhow::Result<()> {
             "warning: --parallel={} is high; TUI rendering is not optimized for this many progress bars. Consider running with --no-tui.",
             parallel
         );
-        if let Some(ui) = &mut ui {
-            ui.println(&msg);
-        } else {
+        if ui.is_none() {
             eprintln!("{msg}");
         }
     }
@@ -232,7 +234,9 @@ async fn main() -> anyhow::Result<()> {
                     }
                     EngineEvent::Warning { message } => {
                         if let Some(ui) = &mut ui {
-                            ui.println(&message);
+                            if should_log_warning_in_tui(&message) {
+                                ui.println(&message);
+                            }
                         } else {
                             eprintln!("{message}");
                         }

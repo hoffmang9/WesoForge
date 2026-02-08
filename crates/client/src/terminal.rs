@@ -12,6 +12,7 @@ use crate::shutdown::{ShutdownController, ShutdownEvent};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TuiInputEvent {
     ToggleTopMode,
+    ToggleLogPane,
     LogUp,
     LogDown,
     LogPageUp,
@@ -91,6 +92,9 @@ impl TuiTerminal {
                         KeyCode::Home => Some(TuiInputEvent::LogHome),
                         KeyCode::End => Some(TuiInputEvent::LogEnd),
                         KeyCode::Tab => Some(TuiInputEvent::ToggleTopMode),
+                        KeyCode::Char(ch) if ch.eq_ignore_ascii_case(&'h') => {
+                            Some(TuiInputEvent::ToggleLogPane)
+                        }
                         _ => None,
                     };
                     if let Some(ev) = mapped {

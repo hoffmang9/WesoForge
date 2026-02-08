@@ -13,7 +13,7 @@ use crate::terminal::TuiInputEvent;
 
 const DETAILED_PROGRESS_BAR_WIDTH: usize = 20;
 const MAX_LOG_LINES: usize = 200;
-const LOG_SHORTCUTS: &str = "Logs: Up/Down PgUp/PgDn Home/End";
+const LOG_SHORTCUTS: &str = "Logs: Up/Down PgUp/PgDn Home/End | h = hide logs";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TopViewMode {
@@ -45,8 +45,10 @@ pub(crate) struct Ui {
     worker_prefix_width: usize,
     top_mode: TopViewMode,
     global_message: String,
+    status_prefix: String,
     stop_message: String,
     logs: VecDeque<String>,
+    logs_visible: bool,
     log_scroll_from_bottom: usize,
     log_viewport_height: usize,
 }
@@ -73,8 +75,10 @@ impl Ui {
             worker_prefix_width: worker_count.max(1).ilog10() as usize + 1,
             top_mode: TopViewMode::Detailed,
             global_message: "Global: 0 it/s".to_string(),
-            stop_message: " ".to_string(),
+            status_prefix: String::new(),
+            stop_message: String::new(),
             logs: VecDeque::new(),
+            logs_visible: true,
             log_scroll_from_bottom: 0,
             log_viewport_height: 1,
         };
@@ -101,6 +105,9 @@ impl Ui {
         match event {
             TuiInputEvent::ToggleTopMode => {
                 self.top_mode = self.top_mode.toggle();
+            }
+            TuiInputEvent::ToggleLogPane => {
+                self.logs_visible = !self.logs_visible;
             }
             TuiInputEvent::LogUp => self.scroll_logs_up(1),
             TuiInputEvent::LogDown => self.scroll_logs_down(1),
@@ -181,6 +188,11 @@ impl Ui {
         self.redraw();
     }
 
+    pub(crate) fn set_status_prefix(&mut self, msg: &str) {
+        self.status_prefix = msg.to_string();
+        self.redraw();
+    }
+
     pub(crate) fn tick_global(&mut self, speed: u64, busy: usize, total: usize) {
         self.global_message = format!(
             "Global: {} it/s (running {busy}/{total})",
@@ -214,15 +226,16 @@ impl Ui {
         self.clamp_log_scroll();
 
         let global_message = self.global_message.clone();
-        let stop_message = self.stop_message.clone();
+        let status_message = self.status_line();
         let top_mode = self.top_mode;
+        let logs_visible = self.logs_visible;
         let grid_column_widths = self
             .terminal
             .size()
             .ok()
             .map(|area| {
                 let area = Rect::new(0, 0, area.width, area.height);
-                let (_, top_area, _, _, _) = compute_layout(area);
+                let (_, top_area, _, _, _) = compute_layout(area, logs_visible);
                 let (top_content_area, _) = split_pane_with_footer(top_area);
                 compute_equal_column_widths(top_content_area.width as usize, 4, 1)
             })
@@ -254,7 +267,7 @@ impl Ui {
 
         let _ = self.terminal.draw(|frame| {
             let (global_area, top_area, separator_area, log_area, stop_area) =
-                compute_layout(frame.area());
+                compute_layout(frame.area(), logs_visible);
             let (top_content_area, top_footer_area) = split_pane_with_footer(top_area);
             let (log_content_area, log_footer_area) = split_pane_with_footer(log_area);
 
@@ -292,28 +305,34 @@ impl Ui {
                 }
             }
 
-            let logs = Paragraph::new(visible_logs.join("\n"));
-            frame.render_widget(logs, log_content_area);
+            if logs_visible {
+                let logs = Paragraph::new(visible_logs.join("\n"));
+                frame.render_widget(logs, log_content_area);
 
-            let separator = Paragraph::new("-".repeat(separator_area.width as usize))
-                .style(Style::default().fg(Color::DarkGray));
-            frame.render_widget(separator, separator_area);
+                let separator = Paragraph::new("-".repeat(separator_area.width as usize))
+                    .style(Style::default().fg(Color::DarkGray));
+                frame.render_widget(separator, separator_area);
+            }
 
             let top_shortcuts = match top_mode {
-                TopViewMode::Detailed => "Top: Tab = grid view",
-                TopViewMode::Grid4 => "Top: Tab = detailed view",
+                TopViewMode::Detailed if logs_visible => "Top: Tab = grid view | h = hide logs",
+                TopViewMode::Detailed => "Top: Tab = grid view | h = show logs",
+                TopViewMode::Grid4 if logs_visible => "Top: Tab = detailed view | h = hide logs",
+                TopViewMode::Grid4 => "Top: Tab = detailed view | h = show logs",
             };
             frame.render_widget(
                 Paragraph::new(top_shortcuts).style(Style::default().fg(Color::DarkGray)),
                 top_footer_area,
             );
-            frame.render_widget(
-                Paragraph::new(LOG_SHORTCUTS).style(Style::default().fg(Color::DarkGray)),
-                log_footer_area,
-            );
+            if logs_visible {
+                frame.render_widget(
+                    Paragraph::new(LOG_SHORTCUTS).style(Style::default().fg(Color::DarkGray)),
+                    log_footer_area,
+                );
+            }
 
-            let stop = Paragraph::new(stop_message.as_str());
-            frame.render_widget(stop, stop_area);
+            let status = Paragraph::new(status_message.as_str());
+            frame.render_widget(status, stop_area);
         });
     }
 
@@ -443,10 +462,25 @@ impl Ui {
     fn update_log_viewport_hint(&mut self) {
         if let Ok(area) = self.terminal.size() {
             let area = Rect::new(0, 0, area.width, area.height);
-            let (_, _, _, log_area, _) = compute_layout(area);
+            let (_, _, _, log_area, _) = compute_layout(area, self.logs_visible);
             let (log_content_area, _) = split_pane_with_footer(log_area);
             self.log_viewport_height = log_content_area.height as usize;
         }
+    }
+
+    fn status_line(&self) -> String {
+        let prefix = self.status_prefix.trim();
+        let stop = self.stop_message.trim();
+        if prefix.is_empty() && stop.is_empty() {
+            return " ".to_string();
+        }
+        if stop.is_empty() {
+            return prefix.to_string();
+        }
+        if prefix.is_empty() {
+            return stop.to_string();
+        }
+        format!("{prefix} | {stop}")
     }
 }
 
@@ -461,7 +495,7 @@ fn split_pane_with_footer(area: Rect) -> (Rect, Rect) {
     (split[0], split[1])
 }
 
-fn compute_layout(area: Rect) -> (Rect, Rect, Rect, Rect, Rect) {
+fn compute_layout(area: Rect, logs_visible: bool) -> (Rect, Rect, Rect, Rect, Rect) {
     let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -470,6 +504,10 @@ fn compute_layout(area: Rect) -> (Rect, Rect, Rect, Rect, Rect) {
             Constraint::Length(1),
         ])
         .split(area);
+    if !logs_visible {
+        let empty = Rect::new(outer[1].x, outer[1].y, 0, 0);
+        return (outer[0], outer[1], empty, empty, outer[2]);
+    }
     let middle = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
