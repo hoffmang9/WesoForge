@@ -106,11 +106,11 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let mut ui = if tui_enabled {
-        Some(Ui::new(parallel))
+        Some(Ui::new(parallel)?)
     } else {
         None
     };
-    if let Some(ui) = &ui {
+    if let Some(ui) = &mut ui {
         ui.println(&startup);
     } else {
         println!("{startup}");
@@ -120,7 +120,7 @@ async fn main() -> anyhow::Result<()> {
             "warning: --parallel={} is high; TUI rendering is not optimized for this many progress bars. Consider running with --no-tui.",
             parallel
         );
-        if let Some(ui) = &ui {
+        if let Some(ui) = &mut ui {
             ui.println(&msg);
         } else {
             eprintln!("{msg}");
@@ -130,7 +130,7 @@ async fn main() -> anyhow::Result<()> {
     let mut worker_busy = vec![false; parallel];
     let mut worker_speed: Vec<u64> = vec![0; parallel];
 
-    let mut ticker = tokio::time::interval(Duration::from_secs(1));
+    let mut ticker = tokio::time::interval(Duration::from_millis(250));
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     let mut immediate_exit = false;
@@ -160,7 +160,7 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
             _ = ticker.tick(), if tui_enabled => {
-                if let Some(ui) = &ui {
+                if let Some(ui) = &mut ui {
                     let busy = worker_busy.iter().filter(|v| **v).count();
                     let speed: u64 = worker_speed.iter().sum();
                     ui.tick_global(speed, busy, parallel);
@@ -188,7 +188,7 @@ async fn main() -> anyhow::Result<()> {
                             *slot = iters_per_sec;
                         }
                         if let Some(ui) = &mut ui {
-                            ui.set_worker_progress(worker_idx, iters_done);
+                            ui.set_worker_progress(worker_idx, iters_done, iters_per_sec);
                         }
                     }
                     EngineEvent::WorkerStage { .. } => {}
@@ -214,21 +214,21 @@ async fn main() -> anyhow::Result<()> {
                             duration,
                         );
 
-                        if let Some(ui) = &ui {
+                        if let Some(ui) = &mut ui {
                             ui.println(&line);
                         } else {
                             println!("{line}");
                         }
                     }
                     EngineEvent::Warning { message } => {
-                        if let Some(ui) = &ui {
+                        if let Some(ui) = &mut ui {
                             ui.println(&message);
                         } else {
                             eprintln!("{message}");
                         }
                     }
                     EngineEvent::Error { message } => {
-                        if let Some(ui) = &ui {
+                        if let Some(ui) = &mut ui {
                             ui.println(&message);
                         } else {
                             eprintln!("{message}");
@@ -240,7 +240,7 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    if let Some(ui) = &ui {
+    if let Some(ui) = &mut ui {
         ui.freeze();
     }
 

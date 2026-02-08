@@ -2,6 +2,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use crossterm::cursor::{Hide, Show};
+use crossterm::execute;
+use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use tokio::sync::mpsc;
 
 use crate::shutdown::{ShutdownController, ShutdownEvent};
@@ -35,8 +38,10 @@ impl TuiTerminal {
         shutdown_tx: mpsc::UnboundedSender<ShutdownEvent>,
     ) -> anyhow::Result<Self> {
         crossterm::terminal::enable_raw_mode()?;
+        execute!(std::io::stdout(), EnterAlternateScreen, Hide)?;
         #[cfg(unix)]
         if let Err(err) = enable_onlcr() {
+            let _ = execute!(std::io::stdout(), Show, LeaveAlternateScreen);
             let _ = crossterm::terminal::disable_raw_mode();
             return Err(err);
         }
@@ -78,6 +83,7 @@ impl TuiTerminal {
 impl Drop for TuiTerminal {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
+        let _ = execute!(std::io::stdout(), Show, LeaveAlternateScreen);
         let _ = crossterm::terminal::disable_raw_mode();
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();

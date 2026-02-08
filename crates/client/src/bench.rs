@@ -24,9 +24,8 @@ const PROOF_ROUNDS_PER_WORKER: usize = 1;
 const GROUP_ROUNDS_PER_WORKER: usize = 3;
 const BENCH_Y_REF_B64: &str = "AABi49IsOPkm3kNS+NW8BLw7jLR/QG2nKwsJ4VIRB+o+C5HAtC7XLoCvOHx/8CIA7fxD1esqHcB+RftlEwdKIMM692W2YUI7xwt4VJe3UoPc3zffkeZ5elOWDP/PO7DL00QBAA==";
 const BENCH_CHALLENGE: [u8; 32] = [
-    0x62, 0x62, 0x72, 0x2d, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x2d, 0x62, 0x65, 0x6e, 0x63,
-    0x68, 0x2d, 0x76, 0x31, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a,
-    0x0b, 0x0c,
+    0x62, 0x62, 0x72, 0x2d, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x2d, 0x62, 0x65, 0x6e, 0x63, 0x68,
+    0x2d, 0x76, 0x31, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c,
 ];
 
 pub fn run_benchmark(mode: WorkMode, parallel: usize) -> anyhow::Result<()> {
@@ -66,7 +65,10 @@ pub fn run_benchmark(mode: WorkMode, parallel: usize) -> anyhow::Result<()> {
 
     println!("Benchmark mode: {mode_label}");
     println!("Parallel workers: {}", format_number(parallel as u64));
-    println!("Rounds per worker: {}", format_number(rounds_per_worker as u64));
+    println!(
+        "Rounds per worker: {}",
+        format_number(rounds_per_worker as u64)
+    );
     if matches!(mode, WorkMode::Group) {
         println!(
             "Group size: {} proofs",
