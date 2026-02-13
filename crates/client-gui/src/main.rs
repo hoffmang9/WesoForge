@@ -177,7 +177,7 @@ async fn start_client(
                     worker_idx,
                     iters_done,
                     iters_total,
-                    iters_per_sec,
+                    effective_iters_per_sec,
                     ..
                 } => {
                     let mut progress = state_for_task.progress.lock().await;
@@ -194,7 +194,7 @@ async fn start_client(
                         worker_idx: *worker_idx,
                         iters_done: *iters_done,
                         iters_total: *iters_total,
-                        iters_per_sec: *iters_per_sec,
+                        iters_per_sec: *effective_iters_per_sec,
                     };
                 }
                 EngineEvent::WorkerJobStarted { worker_idx, job } => {
