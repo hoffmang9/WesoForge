@@ -668,6 +668,84 @@ mod tests {
         (&result[..half], &result[half..])
     }
 
+    fn estimate_bucket_form_bytes(discriminant_size_bits: usize) -> u64 {
+        let discr_bytes = (discriminant_size_bits as u64).div_ceil(8);
+        (discr_bytes * 16).max(2_048)
+    }
+
+    fn tune_streaming_parameters_cost_model(
+        num_iterations: u64,
+        discriminant_size_bits: usize,
+        memory_budget_bytes: u64,
+    ) -> Option<(u32, u32)> {
+        if memory_budget_bytes == 0 {
+            return None;
+        }
+        let budget = memory_budget_bytes.saturating_mul(80) / 100;
+        let bytes_per_form = estimate_bucket_form_bytes(discriminant_size_bits);
+        if budget < bytes_per_form {
+            return None;
+        }
+
+        const UPDATE_WEIGHT: u128 = 16;
+        const FOLD_WEIGHT: u128 = 16;
+        const CHECKPOINT_WEIGHT: u128 = 1;
+
+        let mut best_cost = u128::MAX;
+        let mut best = None;
+        for k in 4u32..=20u32 {
+            let buckets_per_row = 1u128 << k;
+            for l in 1u32..=64u32 {
+                let form_count = buckets_per_row * u128::from(l);
+                let mem_required = form_count * u128::from(bytes_per_form);
+                if mem_required > u128::from(budget) {
+                    continue;
+                }
+
+                let updates = u128::from(num_iterations.div_ceil(u64::from(k)));
+                let kl = u64::from(k) * u64::from(l);
+                let checkpoints = u128::from(num_iterations.div_ceil(kl));
+                let fold = u128::from(l) << (k + 1);
+
+                let cost = updates * UPDATE_WEIGHT
+                    + checkpoints * CHECKPOINT_WEIGHT
+                    + fold * FOLD_WEIGHT;
+                if best.is_none() || cost < best_cost {
+                    best_cost = cost;
+                    best = Some((k, l));
+                }
+            }
+        }
+
+        best
+    }
+
+    #[test]
+    fn tuning_cost_model_avoids_k20_for_moderate_iterations() {
+        // Keep memory effectively unconstrained for (k,l) search, so this test
+        // focuses on the update/checkpoint/fold trade-off.
+        let generous_budget_bytes = 32 * 1024 * 1024 * 1024u64;
+        let t_values = [65_536u64, 250_000, 1_000_000, 4_000_000, 16_000_000];
+
+        for t in t_values {
+            let (k, l) = tune_streaming_parameters_cost_model(
+                t,
+                TEST_DISCRIMINANT_BITS,
+                generous_budget_bytes,
+            )
+            .expect("parameter tuning should find at least one candidate");
+
+            assert!(
+                k < 20,
+                "unexpected k=20 for moderate iterations: T={t}, selected (k,l)=({k},{l})"
+            );
+            assert_eq!(
+                l, 1,
+                "expected l=1 for unconstrained moderate T, got (k,l)=({k},{l}) at T={t}"
+            );
+        }
+    }
+
     #[test]
     fn streaming_getblock_opt_matches_reference_y() {
         let x_s = default_classgroup_element();
