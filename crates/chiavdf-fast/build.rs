@@ -37,6 +37,7 @@ or set BBR_CHIAVDF_DIR to a chiavdf checkout.",
             );
         });
     let chiavdf_src = chiavdf_dir.join("src");
+    const EMBEDDED_COUNTER_SLOTS_DEFINE: &str = "-DCHIA_VDF_FAST_COUNTER_SLOTS=512";
 
     println!(
         "cargo:rerun-if-changed={}",
@@ -121,6 +122,11 @@ or set BBR_CHIAVDF_DIR to a chiavdf checkout.",
         // networking symbols and test-asm hooks for the embedded static library build.
         cxxflags.push_str("-DCHIAVDF_SKIP_BOOST_ASIO=1 -DCHIAVDF_DISABLE_TEST_ASM=1");
     }
+    if !cxxflags.is_empty() {
+        cxxflags.push(' ');
+    }
+    // WesoForge can run multiple VDF jobs in one process; reserve enough pairindex slots.
+    cxxflags.push_str(EMBEDDED_COUNTER_SLOTS_DEFINE);
     if !cxxflags.is_empty() {
         make_env.push(("CXXFLAGS".to_string(), cxxflags));
     }
@@ -234,6 +240,7 @@ fn build_windows_fast_path(chiavdf_dir: &PathBuf, chiavdf_src: &PathBuf) {
     build_cpp.define("_CRT_SECURE_NO_WARNINGS", None);
     build_cpp.define("CHIAVDF_SKIP_BOOST_ASIO", Some("1"));
     build_cpp.define("CHIAVDF_DISABLE_TEST_ASM", Some("1"));
+    build_cpp.define("CHIA_VDF_FAST_COUNTER_SLOTS", Some("512"));
     build_cpp.include(chiavdf_src);
     build_cpp.include(&mpir_dir);
     build_cpp.file(fast_wrapper_cpp);
